@@ -1,0 +1,12 @@
+{
+  "name": "LernWelt",
+  "description": "Language exchange platform with live WebRTC video \u0026 audio chat, real-time AI grammar correction, vocabulary suggestions, and PostgreSQL partner matching.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,196 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light;
+  --lw-canvas: #F4F6FA;
+  --lw-surface: #FFFFFF;
+  --lw-surface-hover: #F8FAFC;
+  --lw-surface-elevated: #EEF1F7;
+  --lw-surface-elevated-hover: #E3E8F2;
+  --lw-inset: #F1F4F9;
+  --lw-border: #E2E7F0;
+  --lw-border-strong: #CBD3E3;
+  --lw-text-primary: #0F172A;
+  --lw-text-secondary: #334155;
+  --lw-text-muted: #475569;
+  --lw-text-faint: #64748B;
+  --lw-accent: #6485F5;
+  --lw-accent-hover: #5374E8;
+  --lw-accent-purple: #9278D8;
+  --lw-success: #36B98A;
+  --lw-scrollbar-thumb: #CBD5E1;
+  --lw-scrollbar-thumb-hover: #94A3B8;
+  --lw-grid-dot: rgba(15, 23, 42, 0.05);
+  --lw-panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  background-color: var(--lw-canvas);
+  color: var(--lw-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html.dark {
+  color-scheme: dark;
+  --lw-canvas: #0D1117;
+  --lw-sidebar: #10151D;
+  --lw-surface: #161D27;
+  --lw-surface-hover: #1B2430;
+  --lw-surface-elevated: #1B2430;
+  --lw-surface-elevated-hover: #222C3B;
+  --lw-inset: #10151D;
+  --lw-border: #293342;
+  --lw-border-strong: #344154;
+  --lw-text-primary: #F0F2F5;
+  --lw-text-secondary: #C6D0DC;
+  --lw-text-muted: #9BA6B2;
+  --lw-text-faint: #788492;
+  --lw-accent: #6485F5;
+  --lw-accent-hover: #7593F7;
+  --lw-accent-purple: #9278D8;
+  --lw-success: #36B98A;
+  --lw-scrollbar-thumb: #293342;
+  --lw-scrollbar-thumb-hover: #3A475C;
+  --lw-grid-dot: rgba(255, 255, 255, 0.025);
+  --lw-panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+html, body, #root {
+  background-color: var(--lw-canvas);
+  color: var(--lw-text-primary);
+  min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  letter-spacing: -0.011em;
+}
+
+code, pre, .font-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Theme-Aware Architectural Canvas */
+.lw-dynamic-canvas {
+  background-color: var(--lw-canvas);
+  color: var(--lw-text-primary);
+}
+
+/* Subtle Hairline Architectural Grid Texture */
+.lw-dot-grid {
+  background-image: radial-gradient(var(--lw-grid-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Crisp Focus-Visible Accessibility Ring */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(100, 133, 245, 0.75);
+  outline-offset: 2px;
+}
+
+/* Custom Sleek Hairline Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--lw-scrollbar-thumb);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lw-scrollbar-thumb-hover);
+}
+
+/* Crisp Surface Panel */
+.glass-panel {
+  background-color: var(--lw-surface);
+  border: 1px solid var(--lw-border);
+  box-shadow: var(--lw-panel-shadow);
+}
+
+.glass-panel-hover {
+  transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel-hover:hover {
+  border-color: var(--lw-border-strong);
+  background-color: var(--lw-surface-hover);
+}
+
+/* Crisp Primary Action Button */
+.btn-minimal-primary {
+  background-color: #6485F5;
+  color: #FFFFFF;
+  font-weight: 600;
+  border: 1px solid rgba(146, 120, 216, 0.4);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms ease;
+}
+.btn-minimal-primary:hover {
+  background-color: #7593F7;
+  border-color: rgba(146, 120, 216, 0.55);
+}
+.btn-minimal-primary:active {
+  transform: scale(0.99);
+}
+
+/* Crisp Secondary Button */
+.btn-minimal-secondary {
+  background-color: var(--lw-surface-elevated);
+  color: var(--lw-text-secondary);
+  border: 1px solid var(--lw-border-strong);
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms ease;
+}
+.btn-minimal-secondary:hover {
+  background-color: var(--lw-surface-elevated-hover);
+  border-color: var(--lw-border-strong);
+  color: var(--lw-text-primary);
+}
+
+@keyframes lw-reaction-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.55);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-50%, -14px) scale(1.18);
+  }
+  28% {
+    opacity: 1;
+    transform: translate(-50%, -32px) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -108px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -140px) scale(0.92);
+  }
+}
+
+.animate-lw-reaction-float {
+  animation: lw-reaction-float 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
