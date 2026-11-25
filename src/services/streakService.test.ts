@@ -15,7 +15,8 @@ import {
   recordDrillCompletion,
   calculateDailyDrillGoalProgress,
   evaluateXpMilestones,
-  XP_MILESTONE_BADGES
+  XP_MILESTONE_BADGES,
+  MINIMUM_DAILY_GOAL_MINUTES
 } from './streakService';
 import { UserStreak } from '../types';
 
@@ -29,7 +30,7 @@ const mockStreak: UserStreak = {
   currentMultiplier: '1.5x',
   totalXp: 1850,
   todayMinutes: 12,
-  dailyGoalMinutes: 15,
+  dailyGoalMinutes: MINIMUM_DAILY_GOAL_MINUTES,
   weeklyHistory: [
     { date: '2026-10-25', dayName: 'Mon', completed: true, xpEarned: 80, minutesPracticed: 25 },
     { date: '2026-10-26', dayName: 'Tue', completed: true, xpEarned: 60, minutesPracticed: 20 },
@@ -83,6 +84,11 @@ test('initializeRealUserStreak keeps fresh learners at 0 days, 0 XP, and 0 freez
   assert.equal(fresh.streakFreezesUsed, 0);
   assert.equal(fresh.todayCompleted, false);
   assert.equal(fresh.todayMinutes, 0);
+  assert.equal(fresh.dailyGoalMinutes, 30);
+
+  // Legacy values below 30 minutes are clamped up to the 30-minute minimum
+  const legacyClamped = initializeRealUserStreak({ dailyGoalMinutes: 15 }, new Date('2026-11-13T10:00:00'));
+  assert.equal(legacyClamped.dailyGoalMinutes, 30);
 });
 
 test('checkMilestoneUnlocks unlocks milestone when threshold is reached', () => {
@@ -105,36 +111,42 @@ test('getStreakStatusLabel provides appropriate feedback', () => {
   assert.ok(getStreakStatusLabel(15, true).includes('Secured'));
 });
 
-test('calculateDailyGoalProgress accurately calculates percentage, remaining minutes, and labels', () => {
-  // 12 of 15 min = 80%
-  const p80 = calculateDailyGoalProgress(12, 15);
+test('calculateDailyGoalProgress enforces 30m minimum goal and accurately calculates percentage, remaining minutes, and labels', () => {
+  // 24 of 30 min = 80%
+  const p80 = calculateDailyGoalProgress(24, 30);
   assert.equal(p80.percent, 80);
   assert.equal(p80.isGoalMet, false);
-  assert.equal(p80.remainingMinutes, 3);
+  assert.equal(p80.remainingMinutes, 6);
   assert.ok(p80.tooltipText.includes('80%'));
 
-  // 15 of 15 min = 100% (goal met)
-  const p100 = calculateDailyGoalProgress(15, 15);
+  // 30 of 30 min = 100% (goal met)
+  const p100 = calculateDailyGoalProgress(30, 30);
   assert.equal(p100.percent, 100);
   assert.equal(p100.isGoalMet, true);
   assert.equal(p100.remainingMinutes, 0);
   assert.ok(p100.ariaLabel.includes('achieved'));
 
-  // Over goal (20 of 15 min) -> clamped to 100%
-  const pOver = calculateDailyGoalProgress(20, 15);
+  // Over goal (40 of 30 min) -> clamped to 100%
+  const pOver = calculateDailyGoalProgress(40, 30);
   assert.equal(pOver.percent, 100);
   assert.equal(pOver.isGoalMet, true);
   assert.equal(pOver.remainingMinutes, 0);
 
-  // 0 of 15 min = 0%
-  const p0 = calculateDailyGoalProgress(0, 15);
+  // 0 of 30 min = 0%
+  const p0 = calculateDailyGoalProgress(0, 30);
   assert.equal(p0.percent, 0);
   assert.equal(p0.isGoalMet, false);
-  assert.equal(p0.remainingMinutes, 15);
+  assert.equal(p0.remainingMinutes, 30);
 
-  // Fallback defaults for missing/zero goal
+  // Values below 30 minutes clamp up to minimum 30 minutes
+  const pClamped = calculateDailyGoalProgress(15, 15);
+  assert.equal(pClamped.dailyGoalMinutes, 30);
+  assert.equal(pClamped.percent, 50);
+  assert.equal(pClamped.isGoalMet, false);
+  assert.equal(pClamped.remainingMinutes, 15);
+
   const pDefault = calculateDailyGoalProgress(5, 0);
-  assert.ok(pDefault.dailyGoalMinutes >= 1);
+  assert.equal(pDefault.dailyGoalMinutes, 30);
 });
 
 test('computeCircleProgressStroke calculates accurate circumference and strokeDashoffset', () => {
@@ -156,10 +168,10 @@ test('computeCircleProgressStroke calculates accurate circumference and strokeDa
 });
 
 test('recordPracticeMinutes increments todayMinutes and updates weekly history', () => {
-  const updated = recordPracticeMinutes(mockStreak, 5);
-  assert.equal(updated.todayMinutes, 17); // 12 + 5 = 17 >= 15
+  const updated = recordPracticeMinutes(mockStreak, 18);
+  assert.equal(updated.todayMinutes, 30); // 12 + 18 = 30 >= 30
   assert.equal(updated.todayCompleted, true);
-  assert.equal(updated.weeklyHistory[6].minutesPracticed, 17);
+  assert.equal(updated.weeklyHistory[6].minutesPracticed, 30);
 });
 
 test('getTodayDateString and getOffsetDateString generate correct ISO format', () => {

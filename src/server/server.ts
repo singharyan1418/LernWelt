@@ -37,6 +37,20 @@ import {
   buildOtpEmailPayload,
   classifyGmailApiError
 } from '../services/gmailLogic';
+import {
+  TEACHER_ACCESS_PRICE_INR,
+  createTeacherAccessPass,
+  extractTeacherIdFromRoomId,
+  getTeacherAccessStatus,
+  getTeacherAccessStatusForTeacher,
+  hasActiveAccessForTeacher,
+  isTeacherAccessActive,
+  isTeacherClassroomRoomId,
+  normalizeTeacherAccessPassList,
+  upsertTeacherAccessPass,
+  validateTeacherPaymentInput
+} from '../services/teacherAccessService';
+import { TeacherAccessPass } from '../types';
 import { AuthRequest, requireAuth } from '../middleware/auth.ts';
 import {
   getOrCreateUser,
@@ -1811,6 +1825,67 @@ const activeUsers = new Map<string, ActiveUser>();
 const customRooms = new Map<string, any>();
 const customTeachers = new Map<string, any>();
 const teacherBookings = new Map<string, any>();
+const TEACHER_ACCESS_PERSIST_PATH = path.resolve(process.cwd(), '.data', 'teacher-access-passes.json');
+const teacherAccessPasses = new Map<string, TeacherAccessPass[]>();
+
+function loadPersistedTeacherPasses() {
+  try {
+    if (!fs.existsSync(TEACHER_ACCESS_PERSIST_PATH)) return;
+    const raw = fs.readFileSync(TEACHER_ACCESS_PERSIST_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const validList = normalizeTeacherAccessPassList(parsed);
+      validList.forEach((p: TeacherAccessPass) => {
+        const key = p.userId.trim().toLowerCase();
+        if (!key) return;
+        const current = teacherAccessPasses.get(key) || [];
+        teacherAccessPasses.set(key, upsertTeacherAccessPass(current, p));
+      });
+    }
+  } catch (err) {
+    console.warn('[LernWelt Server] Could not load persisted teacher passes:', err);
+  }
+}
+
+function savePersistedTeacherPasses() {
+  try {
+    fs.mkdirSync(path.dirname(TEACHER_ACCESS_PERSIST_PATH), { recursive: true });
+    const flattened: TeacherAccessPass[] = [];
+    for (const list of teacherAccessPasses.values()) {
+      flattened.push(...list);
+    }
+    fs.writeFileSync(
+      TEACHER_ACCESS_PERSIST_PATH,
+      JSON.stringify(flattened, null, 2),
+      'utf-8'
+    );
+  } catch (err) {
+    console.warn('[LernWelt Server] Could not save teacher passes:', err);
+  }
+}
+
+function resolveTeacherPassesForUser(userId?: string, userEmail?: string): TeacherAccessPass[] {
+  const cleanId = String(userId || '').trim().toLowerCase();
+  const cleanEmail = String(userEmail || '').trim().toLowerCase();
+  if (cleanId && teacherAccessPasses.has(cleanId)) {
+    return teacherAccessPasses.get(cleanId) || [];
+  }
+  if (cleanEmail) {
+    const matched: TeacherAccessPass[] = [];
+    for (const list of teacherAccessPasses.values()) {
+      for (const pass of list) {
+        if (pass.userEmail && pass.userEmail.toLowerCase() === cleanEmail) {
+          matched.push(pass);
+        }
+      }
+    }
+    return matched;
+  }
+  return [];
+}
+
+loadPersistedTeacherPasses();
+
 const roomSockets = new Map<string, Set<WebSocket>>();
 const socketUsers = new Map<WebSocket, RoomPeerSocketInfo>();
 const peerSockets = new Map<string, WebSocket>();
@@ -2118,7 +2193,100 @@ app.get('/api/random-connect/poll/:userId', (req: Request, res: Response) => {
   });
 });
 
-// 6a. GET / POST /api/teachers & /api/teachers/bookings - Server-authoritative Personal Teachers & 1-on-1 Lesson Bookings
+// 6a. GET / POST /api/teachers/access - Server-authoritative ₹999/month per-teacher Access Pass
+app.get('/api/teachers/access', (req: Request, res: Response) => {
+  const userId = String(req.query.userId || '').trim();
+  const userEmail = String(req.query.email || '').trim();
+  const teacherId = String(req.query.teacherId || '').trim();
+  const nowMs = Date.now();
+  const passes = resolveTeacherPassesForUser(userId, userEmail);
+  const activeTeacherIds = passes
+    .filter((p) => isTeacherAccessActive(p, nowMs))
+    .map((p) => p.teacherId);
+
+  if (teacherId) {
+    return res.json({
+      ...getTeacherAccessStatusForTeacher(passes, teacherId, nowMs),
+      passes,
+      activeTeacherIds
+    });
+  }
+
+  return res.json({
+    amountInr: TEACHER_ACCESS_PRICE_INR,
+    passes,
+    activeTeacherIds
+  });
+});
+
+app.post('/api/teachers/access/pay', (req: Request, res: Response) => {
+  const {
+    userId,
+    teacherId,
+    teacherName,
+    userName,
+    userEmail,
+    paymentMethod,
+    amountInr,
+    upiId,
+    cardHolder,
+    cardNumber,
+    cardExpiry,
+    cardCvv,
+    bankName,
+    accountHolder
+  } = req.body || {};
+
+  const cleanUserId = String(userId || '').trim();
+  const cleanTeacherId = String(teacherId || '').trim();
+  if (!cleanUserId) {
+    return res.status(400).json({ error: 'A valid learner ID is required to activate teacher access.' });
+  }
+  if (!cleanTeacherId) {
+    return res.status(400).json({ error: 'Please select a specific teacher to unlock for ₹999 / month.' });
+  }
+
+  const nowMs = Date.now();
+  const validation = validateTeacherPaymentInput(
+    {
+      paymentMethod,
+      amountInr: amountInr !== undefined ? Number(amountInr) : TEACHER_ACCESS_PRICE_INR,
+      upiId,
+      cardHolder,
+      cardNumber,
+      cardExpiry,
+      cardCvv,
+      bankName,
+      accountHolder
+    },
+    nowMs
+  );
+
+  if (!validation.valid || !validation.paymentSummary) {
+    return res.status(400).json({ error: validation.error || 'Invalid payment details.' });
+  }
+
+  const pass = createTeacherAccessPass({
+    userId: cleanUserId,
+    teacherId: cleanTeacherId,
+    teacherName: teacherName ? String(teacherName) : undefined,
+    userName: userName ? String(userName) : undefined,
+    userEmail: userEmail ? String(userEmail) : undefined,
+    paymentMethod,
+    paymentSummary: validation.paymentSummary,
+    paidAt: nowMs
+  });
+
+  const userKey = cleanUserId.toLowerCase();
+  const updatedPasses = upsertTeacherAccessPass(teacherAccessPasses.get(userKey), pass);
+  teacherAccessPasses.set(userKey, updatedPasses);
+  savePersistedTeacherPasses();
+
+  const status = getTeacherAccessStatus(pass, nowMs);
+  return res.json({ success: true, pass, passes: updatedPasses, status });
+});
+
+// 6a-2. GET / POST /api/teachers & /api/teachers/bookings - Server-authoritative Personal Teachers & 1-on-1 Lesson Bookings
 app.get('/api/teachers', (_req: Request, res: Response) => {
   return res.json({
     teachers: Array.from(customTeachers.values()),
@@ -2146,7 +2314,7 @@ app.post('/api/teachers', (req: Request, res: Response) => {
 });
 
 app.post('/api/teachers/bookings', (req: Request, res: Response) => {
-  const { booking, classroomRoom } = req.body || {};
+  const { booking, classroomRoom, userEmail } = req.body || {};
   if (
     !booking ||
     !booking.id ||
@@ -2156,6 +2324,15 @@ app.post('/api/teachers/bookings', (req: Request, res: Response) => {
   ) {
     return res.status(400).json({
       error: 'A valid lesson time slot and learning goal (at least 5 characters) are required.'
+    });
+  }
+
+  const passes = resolveTeacherPassesForUser(booking.studentId, userEmail);
+  if (!hasActiveAccessForTeacher(passes, booking.teacherId, Date.now())) {
+    return res.status(402).json({
+      error: `Unlock this teacher for ₹${TEACHER_ACCESS_PRICE_INR} (1 month) to book lessons.`,
+      code: 'TEACHER_PASS_REQUIRED',
+      teacherId: booking.teacherId
     });
   }
 
@@ -2208,9 +2385,26 @@ app.get('/api/rooms', (_req: Request, res: Response) => {
 });
 
 app.post('/api/rooms', (req: Request, res: Response) => {
-  const { room } = req.body;
+  const { room, userId, userEmail } = req.body || {};
   if (!room || !room.id) {
     return res.status(400).json({ error: 'Valid room object with id required' });
+  }
+  if (room.roomKind === 'teacher-classroom' || isTeacherClassroomRoomId(room.id)) {
+    const passes = resolveTeacherPassesForUser(userId, userEmail);
+    const targetTeacherId =
+      room.teacherId ||
+      room.host?.id ||
+      extractTeacherIdFromRoomId(
+        room.id,
+        Array.from(customTeachers.keys())
+      );
+    if (!hasActiveAccessForTeacher(passes, targetTeacherId, Date.now())) {
+      return res.status(402).json({
+        error: `Entering a 1-on-1 teacher classroom requires an active ₹${TEACHER_ACCESS_PRICE_INR} monthly pass for this teacher.`,
+        code: 'TEACHER_PASS_REQUIRED',
+        teacherId: targetTeacherId
+      });
+    }
   }
   customRooms.set(room.id, room);
   return res.json({ success: true, room });

@@ -1,5 +1,6 @@
-import { TeacherLessonBooking, VocabularyWord, PersonalTeacher } from '../types';
+import { CalendarEvent, TeacherLessonBooking, VocabularyWord, PersonalTeacher } from '../types';
 import { createInitialsAvatarDataUri } from '../data/teacherData';
+import { findDueTenMinuteEvents } from './eventReminderService';
 
 export type NotificationCategory = 'all' | 'lesson' | 'vocab' | 'partner';
 
@@ -198,19 +199,56 @@ export function derivePartnerRequestNotifications(
     }));
 }
 
+export function deriveCalendarTenMinuteNotifications(
+  visibleCalendarEvents: CalendarEvent[],
+  nowMs: number = Date.now()
+): AppNotification[] {
+  const dueAlerts = findDueTenMinuteEvents(visibleCalendarEvents, nowMs, new Set());
+  return dueAlerts.map((alert) => ({
+    id: `notif_cal_10m_${alert.triggerKey}`,
+    category: 'lesson',
+    title: alert.isTeacherLesson
+      ? `Lesson starts in ${alert.minutesUntilStart}m: ${alert.event.flag} ${alert.event.title}`
+      : `Event starts in ${alert.minutesUntilStart}m: ${alert.event.flag} ${alert.event.title}`,
+    description: `${alert.event.startTime} · ${alert.event.languageName} with ${alert.event.hostName}`,
+    timestamp: `In ${alert.minutesUntilStart}m`,
+    isRead: false,
+    priority: 'high',
+    actionLabel: 'Join Session',
+    actionPayload: alert.event.roomId
+      ? {
+          type: 'join-room',
+          roomId: alert.event.roomId,
+          teacherName: alert.event.hostName
+        }
+      : {
+          type: 'open-tab',
+          tab: 'events-calendar'
+        },
+    metadata: {
+      teacherName: alert.event.hostName,
+      teacherAvatar: alert.event.hostAvatar,
+      slotLabel: `${alert.event.date} · ${alert.event.startTime}`
+    }
+  }));
+}
+
 export function aggregateAllNotifications(
   bookings: TeacherLessonBooking[],
   teachers: PersonalTeacher[],
   vocabulary: VocabularyWord[],
   partnerRequests: PartnerConnectionRequest[],
   readIds: Set<string>,
-  dismissedIds: Set<string>
+  dismissedIds: Set<string>,
+  visibleCalendarEvents: CalendarEvent[] = [],
+  nowMs: number = Date.now()
 ): AppNotification[] {
+  const imminentCalendarNotifs = deriveCalendarTenMinuteNotifications(visibleCalendarEvents, nowMs);
   const lessonNotifs = deriveUpcomingLessonNotifications(bookings, teachers);
   const vocabNotifs = deriveVocabReviewNotifications(vocabulary);
   const partnerNotifs = derivePartnerRequestNotifications(partnerRequests);
 
-  const combined = [...partnerNotifs, ...lessonNotifs, ...vocabNotifs];
+  const combined = [...imminentCalendarNotifs, ...partnerNotifs, ...lessonNotifs, ...vocabNotifs];
 
   return combined
     .filter((n) => !dismissedIds.has(n.id))

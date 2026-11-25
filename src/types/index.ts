@@ -270,6 +270,7 @@ export type ActiveTab =
   | 'events-games'
   | 'gmail'
   | 'tasks'
+  | 'classroom'
   | 'profile';
 
 export type TeacherSpecialty =
@@ -318,6 +319,34 @@ export interface TeacherLessonBooking {
   roomId: string;
   status: 'confirmed' | 'cancelled';
   createdAt: number;
+}
+
+export type TeacherPaymentMethod = 'upi' | 'card' | 'netbanking';
+
+export interface TeacherAccessPass {
+  id: string;
+  userId: string;
+  teacherId: string;
+  teacherName?: string;
+  userName?: string;
+  userEmail?: string;
+  amountInr: number;
+  currency: 'INR';
+  paymentMethod: TeacherPaymentMethod;
+  paymentSummary: string;
+  paidAt: number;
+  expiresAt: number;
+}
+
+export interface TeacherAccessStatus {
+  hasActiveAccess: boolean;
+  isExpired: boolean;
+  amountInr: number;
+  teacherId: string | null;
+  paidAt: number | null;
+  expiresAt: number | null;
+  remainingDays: number;
+  pass: TeacherAccessPass | null;
 }
 
 export type EventCategory = 

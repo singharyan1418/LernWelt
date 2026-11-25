@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import {
   ArrowRight,
   Calendar,
+  CalendarCheck,
   CheckCircle2,
+  Lock,
   Plus,
   Search,
-  Star,
   UserCheck,
   Video,
   X
@@ -13,6 +14,7 @@ import {
 import {
   LanguageInfo,
   PersonalTeacher,
+  TeacherAccessPass,
   TeacherLessonBooking,
   TeacherSpecialty,
   UserProfile
@@ -25,6 +27,10 @@ import {
   validateLessonBookingInput,
   validateTeacherRegistrationInput
 } from '../../services/personalTeacherService';
+import {
+  formatTeacherPassDate,
+  getTeacherAccessStatusForTeacher
+} from '../../services/teacherAccessService';
 import {
   localizeAvailability,
   localizeLanguageName,
@@ -273,25 +279,34 @@ export const BookLessonModal: React.FC<BookLessonModalProps> = ({
   );
 };
 
+export interface TeacherPaymentRequestAction {
+  type: 'enter-room' | 'book-lesson' | 'unlock-only';
+  teacher?: PersonalTeacher;
+}
+
 interface PersonalTeachersColumnProps {
   teachers: PersonalTeacher[];
   bookings: TeacherLessonBooking[];
   selectedLanguage: LanguageInfo;
   userProfile: UserProfile;
+  teacherAccessPasses: TeacherAccessPass[];
+  onRequireTeacherPayment: (action: TeacherPaymentRequestAction) => void;
   onStartLessonWithTeacher: (teacher: PersonalTeacher) => void;
   onBookTeacherSession: (booking: TeacherLessonBooking, teacher: PersonalTeacher) => Promise<void> | void;
   onOpenFullTeachersTab: () => void;
 }
 
 /**
- * Dedicated Personal Teachers Column rendered alongside Active Language Chat Rooms
- * so every learner immediately has direct 1-on-1 teacher access right from the main hub.
+ * Dedicated Personal Teachers Column rendered alongside Active Language Chat Rooms.
+ * Direct teacher interaction requires an active ₹999 monthly pass per individual teacher (1 month from payment date).
  */
 export const PersonalTeachersColumn: React.FC<PersonalTeachersColumnProps> = ({
   teachers,
   bookings,
   selectedLanguage,
   userProfile,
+  teacherAccessPasses,
+  onRequireTeacherPayment,
   onStartLessonWithTeacher,
   onBookTeacherSession,
   onOpenFullTeachersTab
@@ -315,6 +330,24 @@ export const PersonalTeachersColumn: React.FC<PersonalTeachersColumnProps> = ({
       ),
     [bookings, userProfile.id, userProfile.name]
   );
+
+  const handleTeacherRoomClick = (teacher: PersonalTeacher) => {
+    const teacherStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, teacher.id);
+    if (!teacherStatus.hasActiveAccess) {
+      onRequireTeacherPayment({ type: 'enter-room', teacher });
+      return;
+    }
+    onStartLessonWithTeacher(teacher);
+  };
+
+  const handleTeacherBookClick = (teacher: PersonalTeacher) => {
+    const teacherStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, teacher.id);
+    if (!teacherStatus.hasActiveAccess) {
+      onRequireTeacherPayment({ type: 'book-lesson', teacher });
+      return;
+    }
+    setBookingTeacher(teacher);
+  };
 
   return (
     <aside
@@ -348,6 +381,7 @@ export const PersonalTeachersColumn: React.FC<PersonalTeachersColumnProps> = ({
           <div className="space-y-2">
             {myUpcomingBookings.slice(0, 2).map(bk => {
               const matched = teachers.find(tItem => tItem.id === bk.teacherId);
+              const bkStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, bk.teacherId);
               return (
                 <div
                   key={bk.id}
@@ -365,10 +399,11 @@ export const PersonalTeachersColumn: React.FC<PersonalTeachersColumnProps> = ({
                   {matched && (
                     <button
                       type="button"
-                      onClick={() => onStartLessonWithTeacher(matched)}
-                      className="w-full py-1.5 px-3 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-xs border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer whitespace-nowrap"
+                      onClick={() => handleTeacherRoomClick(matched)}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-xs border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      {t('teachers.joinClassroom', uiLang)}
+                      {!bkStatus.hasActiveAccess && <Lock className="w-3 h-3 shrink-0" />}
+                      <span>{t('teachers.joinClassroom', uiLang)}</span>
                     </button>
                   )}
                 </div>
@@ -379,62 +414,84 @@ export const PersonalTeachersColumn: React.FC<PersonalTeachersColumnProps> = ({
       )}
 
       <div className="space-y-3.5">
-        {prioritizedTeachers.map(teacher => (
-          <div
-            key={teacher.id}
-            className="rounded-lg bg-slate-50 dark:bg-[#10151D] border border-slate-200 dark:border-[#293342] hover:border-slate-300 dark:hover:border-[#293342] p-4 space-y-3 transition-colors duration-200"
-          >
-            <div className="flex items-start gap-3">
-              <TeacherAvatar
-                name={teacher.name}
-                avatarUrl={teacher.avatarUrl}
-                sizeClass="w-10 h-10 rounded-lg"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-[#F0F2F5] truncate">{teacher.name}</h3>
-                  <span className="text-xs font-semibold text-amber-600 dark:text-amber-300 tabular-nums shrink-0">
-                    <span>★ {teacher.rating.toFixed(2)}</span>
-                  </span>
+        {prioritizedTeachers.map(teacher => {
+          const teacherStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, teacher.id);
+          return (
+            <div
+              key={teacher.id}
+              className="rounded-lg bg-slate-50 dark:bg-[#10151D] border border-slate-200 dark:border-[#293342] hover:border-slate-300 dark:hover:border-[#293342] p-4 space-y-3 transition-colors duration-200"
+            >
+              <div className="flex items-start gap-3">
+                <TeacherAvatar
+                  name={teacher.name}
+                  avatarUrl={teacher.avatarUrl}
+                  sizeClass="w-10 h-10 rounded-lg"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-[#F0F2F5] truncate">{teacher.name}</h3>
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-300 tabular-nums shrink-0">
+                      <span>★ {teacher.rating.toFixed(2)}</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-[#9BA6B2] mt-0.5">
+                    <span>{teacher.flag} {localizeLanguageName(teacher.languageName, uiLang)}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>{teacher.cefrRange}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span className="text-emerald-700 dark:text-emerald-400">{localizeAvailability(teacher.availability, uiLang)}</span>
+                  </p>
                 </div>
-                <p className="text-xs text-slate-600 dark:text-[#9BA6B2] mt-0.5">
-                  <span>{teacher.flag} {localizeLanguageName(teacher.languageName, uiLang)}</span>
-                  <span aria-hidden="true"> · </span>
-                  <span>{teacher.cefrRange}</span>
-                  <span aria-hidden="true"> · </span>
-                  <span className="text-emerald-700 dark:text-emerald-400">{localizeAvailability(teacher.availability, uiLang)}</span>
-                </p>
+              </div>
+
+              <p className="text-xs text-slate-700 dark:text-[#F0F2F5] leading-relaxed line-clamp-2">
+                {teacher.lessonFocus}
+              </p>
+
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-slate-600 dark:text-[#9BA6B2] truncate">
+                  {teacher.specialties.slice(0, 2).map(s => localizeSpecialty(s, uiLang)).join(' · ')}
+                </span>
+                {teacherStatus.hasActiveAccess && teacherStatus.expiresAt ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300 font-semibold whitespace-nowrap shrink-0">
+                    <CalendarCheck className="w-3 h-3 shrink-0" />
+                    <span>{t('teachers.passActiveBadge', uiLang)}</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onRequireTeacherPayment({ type: 'unlock-only', teacher })}
+                    className="inline-flex items-center gap-1 text-indigo-700 dark:text-[#A5B4FC] hover:underline font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Lock className="w-3 h-3 shrink-0" />
+                    <span>{teacherStatus.isExpired ? t('teachers.passRenewBtn', uiLang) : t('teachers.passUnlockBtn', uiLang)}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleTeacherRoomClick(teacher)}
+                  aria-label={`${t('teachers.oneOnOneRoom', uiLang)} · ${teacher.name}`}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#6485F5]/10 dark:bg-[#6485F5]/15 hover:bg-[#6485F5] text-indigo-700 dark:text-[#F0F2F5] hover:text-white font-medium text-xs border border-[#6485F5]/35 transition-colors cursor-pointer whitespace-nowrap active:scale-[0.99]"
+                >
+                  {!teacherStatus.hasActiveAccess && <Lock className="w-3 h-3 shrink-0" />}
+                  <span>{t('teachers.oneOnOneRoom', uiLang)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleTeacherBookClick(teacher)}
+                  aria-label={`${t('teachers.bookSlot', uiLang)} · ${teacher.name}`}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-slate-100 dark:bg-[#1B2430] hover:bg-slate-200 dark:hover:bg-[#232F3F] border border-slate-300 dark:border-[#293342] text-slate-800 dark:text-[#F0F2F5] font-medium text-xs transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  {!teacherStatus.hasActiveAccess && <Lock className="w-3 h-3 shrink-0" />}
+                  <span>{t('teachers.bookSlot', uiLang)}</span>
+                </button>
               </div>
             </div>
-
-            <p className="text-xs text-slate-700 dark:text-[#F0F2F5] leading-relaxed line-clamp-2">
-              {teacher.lessonFocus}
-            </p>
-
-            <div className="text-[11px] text-slate-600 dark:text-[#9BA6B2] truncate">
-              {teacher.specialties.slice(0, 2).map(s => localizeSpecialty(s, uiLang)).join(' · ')}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => onStartLessonWithTeacher(teacher)}
-                aria-label={`${t('teachers.oneOnOneRoom', uiLang)} · ${teacher.name}`}
-                className="flex items-center justify-center py-2 px-3 rounded-lg bg-[#6485F5]/10 dark:bg-[#6485F5]/15 hover:bg-[#6485F5] text-indigo-700 dark:text-[#F0F2F5] hover:text-white font-medium text-xs border border-[#6485F5]/35 transition-colors cursor-pointer whitespace-nowrap active:scale-[0.99]"
-              >
-                <span>{t('teachers.oneOnOneRoom', uiLang)}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBookingTeacher(teacher)}
-                aria-label={`${t('teachers.bookSlot', uiLang)} · ${teacher.name}`}
-                className="flex items-center justify-center py-2 px-3 rounded-lg bg-slate-100 dark:bg-[#1B2430] hover:bg-slate-200 dark:hover:bg-[#232F3F] border border-slate-300 dark:border-[#293342] text-slate-800 dark:text-[#F0F2F5] font-medium text-xs transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <span>{t('teachers.bookSlot', uiLang)}</span>
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <button
@@ -464,6 +521,8 @@ interface PersonalTeachersViewProps {
   selectedLanguage: LanguageInfo;
   supportedLanguages: LanguageInfo[];
   userProfile: UserProfile;
+  teacherAccessPasses: TeacherAccessPass[];
+  onRequireTeacherPayment: (action: TeacherPaymentRequestAction) => void;
   onStartLessonWithTeacher: (teacher: PersonalTeacher) => void;
   onBookTeacherSession: (booking: TeacherLessonBooking, teacher: PersonalTeacher) => Promise<void> | void;
   onCancelBooking: (bookingId: string) => Promise<void> | void;
@@ -479,6 +538,8 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
   selectedLanguage,
   supportedLanguages,
   userProfile,
+  teacherAccessPasses,
+  onRequireTeacherPayment,
   onStartLessonWithTeacher,
   onBookTeacherSession,
   onCancelBooking,
@@ -559,7 +620,7 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
       nextAvailableSlots: ['Today · Flexible', 'Tomorrow · 10:00', 'Tomorrow · 18:00'],
       bio: regBio.trim(),
       lessonFocus: regFocus.trim(),
-      accessLabel: 'Open 1-on-1 Access',
+      accessLabel: '₹999 / Month Pass',
       isCommunityTeacher: true
     };
 
@@ -569,6 +630,24 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
     setRegCredentials('');
     setRegFocus('');
     setRegBio('');
+  };
+
+  const handleJoinTeacherClassroom = (teacher: PersonalTeacher) => {
+    const teacherStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, teacher.id);
+    if (!teacherStatus.hasActiveAccess) {
+      onRequireTeacherPayment({ type: 'enter-room', teacher });
+      return;
+    }
+    onStartLessonWithTeacher(teacher);
+  };
+
+  const handleOpenBookingForTeacher = (teacher: PersonalTeacher) => {
+    const teacherStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, teacher.id);
+    if (!teacherStatus.hasActiveAccess) {
+      onRequireTeacherPayment({ type: 'book-lesson', teacher });
+      return;
+    }
+    setBookingTeacher(teacher);
   };
 
   return (
@@ -608,6 +687,7 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {activeBookings.map(bk => {
               const teacherObj = teachers.find(tItem => tItem.id === bk.teacherId);
+              const bkAccessStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, bk.teacherId);
               return (
                 <div
                   key={bk.id}
@@ -654,9 +734,9 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
                       type="button"
                       onClick={() => {
                         if (teacherObj) {
-                          onStartLessonWithTeacher(teacherObj);
+                          handleJoinTeacherClassroom(teacherObj);
                         } else {
-                          onStartLessonWithTeacher({
+                          handleJoinTeacherClassroom({
                             id: bk.teacherId,
                             name: bk.teacherName,
                             avatarUrl: bk.teacherAvatar,
@@ -675,13 +755,14 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
                             nextAvailableSlots: [bk.slotLabel],
                             bio: bk.learningGoal,
                             lessonFocus: bk.learningGoal,
-                            accessLabel: 'Open 1-on-1 Access'
+                            accessLabel: '₹999 / Month Pass'
                           });
                         }
                       }}
                       aria-label={`${t('teachers.joinClassroom', uiLang)} · ${bk.teacherName}`}
-                      className="flex items-center justify-center px-4 py-1.5 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-xs border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer whitespace-nowrap"
+                      className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-xs border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer whitespace-nowrap"
                     >
+                      {!bkAccessStatus.hasActiveAccess && <Lock className="w-3.5 h-3.5 shrink-0" />}
                       <span>{t('teachers.joinClassroom', uiLang)}</span>
                     </button>
                   </div>
@@ -797,103 +878,149 @@ export const PersonalTeachersView: React.FC<PersonalTeachersViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {filteredTeachers.map(teacher => (
-            <article
-              key={teacher.id}
-              className="rounded-xl bg-white dark:bg-[#161D27] border border-slate-200 dark:border-[#293342] hover:border-slate-300 dark:hover:border-[#293342] p-6 flex flex-col justify-between gap-5 transition-colors shadow-xs dark:shadow-none"
-            >
-              <div className="space-y-4">
-                {/* Identity & Unboxed Metadata */}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3.5 min-w-0">
-                    <TeacherAvatar
-                      name={teacher.name}
-                      avatarUrl={teacher.avatarUrl}
-                      sizeClass="w-12 h-12 rounded-lg"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="text-base font-semibold text-slate-900 dark:text-[#F0F2F5] truncate">
-                          {teacher.name}
-                        </h3>
-                        <CheckCircle2
-                          className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0"
-                          aria-label={t('teachers.verifiedNative', uiLang)}
-                        />
+          {filteredTeachers.map(teacher => {
+            const teacherStatus = getTeacherAccessStatusForTeacher(teacherAccessPasses, teacher.id);
+            return (
+              <article
+                key={teacher.id}
+                data-testid={`teacher-card-${teacher.id}`}
+                className="rounded-xl bg-white dark:bg-[#161D27] border border-slate-200 dark:border-[#293342] hover:border-slate-300 dark:hover:border-[#293342] p-6 flex flex-col justify-between gap-5 transition-colors shadow-xs dark:shadow-none"
+              >
+                <div className="space-y-4">
+                  {/* Identity & Unboxed Metadata */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      <TeacherAvatar
+                        name={teacher.name}
+                        avatarUrl={teacher.avatarUrl}
+                        sizeClass="w-12 h-12 rounded-lg"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="text-base font-semibold text-slate-900 dark:text-[#F0F2F5] truncate">
+                            {teacher.name}
+                          </h3>
+                          <CheckCircle2
+                            className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0"
+                            aria-label={t('teachers.verifiedNative', uiLang)}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-[#9BA6B2] mt-0.5">
+                          {teacher.credentials}
+                        </p>
+                        <p className="text-xs text-slate-600 dark:text-[#9BA6B2] mt-1">
+                          <span className="text-slate-800 dark:text-[#F0F2F5]">{teacher.flag} {localizeLanguageName(teacher.languageName, uiLang)}</span>
+                          <span aria-hidden="true"> · </span>
+                          <span>{teacher.cefrRange}</span>
+                          <span aria-hidden="true"> · </span>
+                          <span className="tabular-nums">{t('teachers.yearsExp', uiLang, { count: teacher.yearsExperience })}</span>
+                          <span aria-hidden="true"> · </span>
+                          <span className="text-emerald-700 dark:text-emerald-400">{localizeAvailability(teacher.availability, uiLang)}</span>
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-600 dark:text-[#9BA6B2] mt-0.5">
-                        {teacher.credentials}
-                      </p>
-                      <p className="text-xs text-slate-600 dark:text-[#9BA6B2] mt-1">
-                        <span className="text-slate-800 dark:text-[#F0F2F5]">{teacher.flag} {localizeLanguageName(teacher.languageName, uiLang)}</span>
-                        <span aria-hidden="true"> · </span>
-                        <span>{teacher.cefrRange}</span>
-                        <span aria-hidden="true"> · </span>
-                        <span className="tabular-nums">{t('teachers.yearsExp', uiLang, { count: teacher.yearsExperience })}</span>
-                        <span aria-hidden="true"> · </span>
-                        <span className="text-emerald-700 dark:text-emerald-400">{localizeAvailability(teacher.availability, uiLang)}</span>
-                      </p>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <div className="flex items-center justify-end gap-1 text-xs font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                      <Star className="w-3.5 h-3.5 fill-amber-500 dark:fill-amber-400" />
-                      <span>{teacher.rating.toFixed(2)}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 dark:text-[#9BA6B2] tabular-nums mt-0.5">
-                      {t('teachers.sessionsDone', uiLang, { count: teacher.lessonsCompleted })}
+                  {/* Bio & Teaching Focus */}
+                  <p className="text-xs sm:text-sm text-slate-700 dark:text-[#F0F2F5] leading-relaxed">
+                    {teacher.bio}
+                  </p>
+
+                  <div className="pt-3 border-t border-slate-200 dark:border-[#293342] space-y-1.5 text-xs">
+                    <p className="text-slate-800 dark:text-[#F0F2F5]">
+                      <span className="text-slate-600 dark:text-[#9BA6B2]">{t('teachers.oneOnOneFocus', uiLang)} </span>
+                      {teacher.lessonFocus}
+                    </p>
+                    <p className="text-slate-600 dark:text-[#9BA6B2]">
+                      <span>{t('teachers.specialtiesLabel', uiLang)} {teacher.specialties.map(s => localizeSpecialty(s, uiLang)).join(' · ')}</span>
+                      <span aria-hidden="true"> · </span>
+                      <span>{t('teachers.speaksLabel', uiLang)} {teacher.alsoSpeaks.map(l => localizeLanguageName(l, uiLang)).join(', ')}</span>
+                    </p>
+                    <p className="text-slate-600 dark:text-[#9BA6B2]">
+                      <span>{t('teachers.nextSlotsLabel', uiLang)} {teacher.nextAvailableSlots.map(s => localizeSlotLabel(s, uiLang)).join(' · ')}</span>
+                      <span aria-hidden="true"> · </span>
+                      <span className="text-slate-700 dark:text-[#F0F2F5] font-medium">{localizeTeacherAccessLabel(teacher.accessLabel, uiLang)}</span>
                     </p>
                   </div>
                 </div>
 
-                {/* Bio & Teaching Focus */}
-                <p className="text-xs sm:text-sm text-slate-700 dark:text-[#F0F2F5] leading-relaxed">
-                  {teacher.bio}
-                </p>
+                {/* Per-Teacher ₹999 Monthly Unlock Status & Actions */}
+                <div className="space-y-3 pt-1">
+                  {teacherStatus.hasActiveAccess && teacherStatus.expiresAt ? (
+                    <div
+                      data-testid={`teacher-unlocked-badge-${teacher.id}`}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs"
+                    >
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300">
+                        <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
+                        <span>{t('teachers.passActiveBadge', uiLang)}</span>
+                      </span>
+                      <span className="text-[11px] text-emerald-700 dark:text-emerald-200/90 tabular-nums">
+                        {t('teachers.passActiveDesc', uiLang, {
+                          expiryDate: formatTeacherPassDate(teacherStatus.expiresAt, uiLang),
+                          days: teacherStatus.remainingDays
+                        })}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      data-testid={`teacher-locked-bar-${teacher.id}`}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#6485F5]/10 border border-[#6485F5]/25 text-xs"
+                    >
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 dark:text-[#CBD5E1] min-w-0 truncate">
+                        <Lock className="w-3.5 h-3.5 text-indigo-600 dark:text-[#A5B4FC] shrink-0" />
+                        <span className="truncate">
+                          {teacherStatus.isExpired && teacherStatus.expiresAt
+                            ? t('teachers.passExpiredDesc', uiLang, {
+                                date: formatTeacherPassDate(teacherStatus.expiresAt, uiLang)
+                              })
+                            : t('teachers.passMonthPassLabel', uiLang)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        data-testid={`unlock-teacher-btn-${teacher.id}`}
+                        onClick={() => onRequireTeacherPayment({ type: 'unlock-only', teacher })}
+                        className="px-2.5 py-1 rounded-md bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-[11px] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        {teacherStatus.isExpired ? t('teachers.passRenewBtn', uiLang) : t('teachers.passUnlockBtn', uiLang)}
+                      </button>
+                    </div>
+                  )}
 
-                <div className="pt-3 border-t border-slate-200 dark:border-[#293342] space-y-1.5 text-xs">
-                  <p className="text-slate-800 dark:text-[#F0F2F5]">
-                    <span className="text-slate-600 dark:text-[#9BA6B2]">{t('teachers.oneOnOneFocus', uiLang)} </span>
-                    {teacher.lessonFocus}
-                  </p>
-                  <p className="text-slate-600 dark:text-[#9BA6B2]">
-                    <span>{t('teachers.specialtiesLabel', uiLang)} {teacher.specialties.map(s => localizeSpecialty(s, uiLang)).join(' · ')}</span>
-                    <span aria-hidden="true"> · </span>
-                    <span>{t('teachers.speaksLabel', uiLang)} {teacher.alsoSpeaks.map(l => localizeLanguageName(l, uiLang)).join(', ')}</span>
-                  </p>
-                  <p className="text-slate-600 dark:text-[#9BA6B2]">
-                    <span>{t('teachers.nextSlotsLabel', uiLang)} {teacher.nextAvailableSlots.map(s => localizeSlotLabel(s, uiLang)).join(' · ')}</span>
-                    <span aria-hidden="true"> · </span>
-                    <span className="text-slate-700 dark:text-[#F0F2F5] font-medium">{localizeTeacherAccessLabel(teacher.accessLabel, uiLang)}</span>
-                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleJoinTeacherClassroom(teacher)}
+                      aria-label={`${t('teachers.joinClassroom', uiLang)} · ${teacher.name}`}
+                      className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-xs border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer whitespace-nowrap active:scale-[0.99]"
+                    >
+                      {teacherStatus.hasActiveAccess ? (
+                        <Video className="w-4 h-4 shrink-0" />
+                      ) : (
+                        <Lock className="w-4 h-4 shrink-0" />
+                      )}
+                      <span>{t('teachers.joinClassroom', uiLang)}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenBookingForTeacher(teacher)}
+                      aria-label={`${t('teachers.bookLesson', uiLang)} · ${teacher.name}`}
+                      className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-slate-100 dark:bg-[#1B2430] hover:bg-slate-200 dark:hover:bg-[#232F3F] border border-slate-300 dark:border-[#293342] text-slate-800 dark:text-[#F0F2F5] font-medium text-xs transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      {teacherStatus.hasActiveAccess ? (
+                        <Calendar className="w-4 h-4 shrink-0" />
+                      ) : (
+                        <Lock className="w-4 h-4 shrink-0" />
+                      )}
+                      <span>{t('teachers.bookLesson', uiLang)}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Primary & Secondary Actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => onStartLessonWithTeacher(teacher)}
-                  aria-label={`${t('teachers.joinClassroom', uiLang)} · ${teacher.name}`}
-                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white font-semibold text-xs border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer whitespace-nowrap active:scale-[0.99]"
-                >
-                  <Video className="w-4 h-4 shrink-0" />
-                  <span>{t('teachers.joinClassroom', uiLang)}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setBookingTeacher(teacher)}
-                  aria-label={`${t('teachers.bookLesson', uiLang)} · ${teacher.name}`}
-                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-slate-100 dark:bg-[#1B2430] hover:bg-slate-200 dark:hover:bg-[#232F3F] border border-slate-300 dark:border-[#293342] text-slate-800 dark:text-[#F0F2F5] font-medium text-xs transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  <Calendar className="w-4 h-4 shrink-0" />
-                  <span>{t('teachers.bookLesson', uiLang)}</span>
-                </button>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
 

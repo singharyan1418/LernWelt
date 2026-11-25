@@ -88,10 +88,18 @@ test('accumulateRealPracticeSeconds tracks exact seconds, derives real minutes, 
   assert.equal(profile.streak?.todayMinutes, 3);
   assert.equal(profile.streak?.weeklyHistory[6].minutesPracticed, 3);
 
-  // Add 720 seconds (12m) -> 915 seconds = 15m -> meets 15m daily goal and completes streak!
+  // Add 720 seconds (12m) -> 915 seconds = 15m (below 30m minimum goal, streak still not met)
   profile = accumulateRealPracticeSeconds(profile, 720, refDate);
   assert.equal(profile.totalPracticeMinutes, 15);
   assert.equal(profile.streak?.todayMinutes, 15);
+  assert.equal(profile.streak?.dailyGoalMinutes, 30);
+  assert.equal(profile.streak?.todayCompleted, false);
+  assert.equal(profile.streakDays, 0);
+
+  // Add 900 seconds (15m) -> 1815 seconds = 30m -> meets 30m daily goal and completes streak!
+  profile = accumulateRealPracticeSeconds(profile, 900, refDate);
+  assert.equal(profile.totalPracticeMinutes, 30);
+  assert.equal(profile.streak?.todayMinutes, 30);
   assert.equal(profile.streak?.todayCompleted, true);
   assert.equal(profile.streakDays, 1);
   assert.equal(profile.streak?.totalXp, 50);

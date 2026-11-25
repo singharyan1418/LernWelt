@@ -1,5 +1,6 @@
 import { GOOGLE_CHAT_PROJECT_ID, GOOGLE_CHAT_SCOPES } from './googleChatLogic';
 import { GOOGLE_TASKS_SCOPES } from './googleTasksLogic';
+import { GOOGLE_CALENDAR_SCOPES } from './googleCalendarLogic';
 
 /**
  * Full set of Gmail OAuth scopes configured for LernWelt.
@@ -22,10 +23,15 @@ export const GMAIL_SCOPES: readonly string[] = [
 ] as const;
 
 /**
- * Combined Google Workspace OAuth scopes (Google Chat + Gmail + Google Tasks).
+ * Combined Google Workspace OAuth scopes (Google Chat + Gmail + Google Tasks + Google Calendar).
  */
 export const COMBINED_WORKSPACE_SCOPES: readonly string[] = Array.from(
-  new Set([...GOOGLE_CHAT_SCOPES, ...GMAIL_SCOPES, ...GOOGLE_TASKS_SCOPES])
+  new Set([
+    ...GOOGLE_CHAT_SCOPES,
+    ...GMAIL_SCOPES,
+    ...GOOGLE_TASKS_SCOPES,
+    ...GOOGLE_CALENDAR_SCOPES
+  ])
 );
 
 export const GMAIL_CONSOLE_API_URL = `https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=${GOOGLE_CHAT_PROJECT_ID}`;

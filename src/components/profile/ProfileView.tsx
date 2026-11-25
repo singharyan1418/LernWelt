@@ -20,12 +20,16 @@ import {
   Moon,
   Sun,
   Volume2,
-  VolumeX
+  VolumeX,
+  BarChart3,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { CEFRLevel, UserProfile, UserStreak } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../data/mockData';
 import { StreakProgressIcon } from '../streak/StreakProgressIcon';
-import { initializeRealUserStreak } from '../../services/streakService';
+import { WeeklyPracticeChart } from './WeeklyPracticeChart';
+import { initializeRealUserStreak, MINIMUM_DAILY_GOAL_MINUTES } from '../../services/streakService';
 import { formatPracticedDuration } from '../../services/learningStatsService';
 import { AppTheme } from '../../services/themeService';
 import {
@@ -94,6 +98,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     onChangeAudioNotifications?.(nextEnabled);
   };
   const [isEditing, setIsEditing] = useState(false);
+  const [showWeeklyChart, setShowWeeklyChart] = useState(false);
   const [name, setName] = useState(userProfile.name);
   const [emailInput, setEmailInput] = useState(userProfile.email);
   const [bio, setBio] = useState(userProfile.bio);
@@ -143,7 +148,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       totalXp: 0,
       streakFreezesAvailable: 0,
       streakFreezesUsed: 0,
-      dailyGoalMinutes: 15,
+      dailyGoalMinutes: MINIMUM_DAILY_GOAL_MINUTES,
       dailyDrillGoal: 5,
       todayDrillsCompleted: 0,
       todayMinutes: 0,
@@ -792,6 +797,61 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </p>
           <p className="text-[10px] text-slate-600 dark:text-[#8E99B2]">{t('profile.statCorrectionsDesc', uiLang)}</p>
         </div>
+      </div>
+
+      {/* Weekly Practice Chart Toggle Button & Expandable Recharts Panel */}
+      <div className="bg-white dark:bg-[#0E1422] border border-slate-200 dark:border-[#1D263B] rounded-xl p-5 sm:p-6 space-y-5 shadow-xs dark:shadow-none">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#5C6AE0]/15 border border-[#5C6AE0]/30 flex items-center justify-center text-indigo-600 dark:text-[#8B97EE] shrink-0">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-[#F1F4FA] tracking-tight">
+                {t('profile.weeklyChartTitle', uiLang)}
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-[#8E99B2]">
+                {t('profile.weeklyChartDesc', uiLang, { goal: streak.dailyGoalMinutes || MINIMUM_DAILY_GOAL_MINUTES })}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            data-testid="toggle-weekly-practice-chart-btn"
+            aria-expanded={showWeeklyChart}
+            aria-controls="weekly-practice-chart-panel"
+            onClick={() => setShowWeeklyChart((prev) => !prev)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5C6AE0] hover:bg-[#6A77E8] text-white text-xs font-semibold border border-[#6E7AE8]/40 shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors cursor-pointer"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>
+              {showWeeklyChart
+                ? t('profile.hideWeeklyChart', uiLang)
+                : t('profile.showWeeklyChart', uiLang)}
+            </span>
+            {showWeeklyChart ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
+
+        {showWeeklyChart && (
+          <div
+            id="weekly-practice-chart-panel"
+            data-testid="weekly-practice-chart-panel"
+            className="pt-4 border-t border-slate-200 dark:border-[#1D263B]"
+          >
+            <WeeklyPracticeChart
+              streak={streak}
+              theme={theme}
+              nativeLanguage={uiLang}
+              embedded
+            />
+          </div>
+        )}
       </div>
 
       {/* Gamified Daily Learning Streak Tracker */}

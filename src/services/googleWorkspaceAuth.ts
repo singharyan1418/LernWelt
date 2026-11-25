@@ -10,7 +10,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { COMBINED_WORKSPACE_SCOPES } from './gmailLogic';
 
 /**
- * Shared Firebase Auth instance for Google Workspace OAuth (Gmail + Google Chat).
+ * Shared Firebase Auth instance for Google Workspace OAuth (Gmail + Google Chat + Google Tasks + Google Calendar).
  * Reuses any existing Firebase app instance and caches the OAuth access token strictly in memory.
  */
 const firebaseApp = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);

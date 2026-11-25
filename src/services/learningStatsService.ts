@@ -10,7 +10,8 @@ import {
   calculateStreakMultiplier,
   checkMilestoneUnlocks,
   getTodayDateString,
-  initializeRealUserStreak
+  initializeRealUserStreak,
+  MINIMUM_DAILY_GOAL_MINUTES
 } from './streakService';
 
 export interface PersistedLearningStats {
@@ -65,7 +66,7 @@ export function sanitizeToRealStatsProfile(
         totalXp: 0,
         streakFreezesAvailable: 0,
         streakFreezesUsed: 0,
-        dailyGoalMinutes: 15,
+        dailyGoalMinutes: MINIMUM_DAILY_GOAL_MINUTES,
         dailyDrillGoal: 5,
         todayDrillsCompleted: 0,
         todayMinutes: 0,
@@ -154,7 +155,10 @@ export function accumulateRealPracticeSeconds(
   const nextTodayMinutes = Math.floor(nextTodaySeconds / 60);
 
   const todayStr = getTodayDateString(referenceDate);
-  const dailyGoalMinutes = Math.max(1, currentStreak.dailyGoalMinutes || 15);
+  const dailyGoalMinutes = Math.max(
+    MINIMUM_DAILY_GOAL_MINUTES,
+    currentStreak.dailyGoalMinutes || MINIMUM_DAILY_GOAL_MINUTES
+  );
   const goalMetNow = nextTodayMinutes >= dailyGoalMinutes;
   const newlyCompletedToday = !currentStreak.todayCompleted && goalMetNow;
 

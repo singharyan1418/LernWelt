@@ -16,11 +16,15 @@ import {
   LanguageInfo,
   LanguageRoom,
   PersonalTeacher,
+  TeacherAccessPass,
   TeacherLessonBooking,
   UserProfile
 } from '../../types';
 import { createInitialsAvatarDataUri } from '../../data/teacherData';
-import { PersonalTeachersColumn } from '../teachers/PersonalTeachersView';
+import {
+  PersonalTeachersColumn,
+  TeacherPaymentRequestAction
+} from '../teachers/PersonalTeachersView';
 import { localizeLanguageName, t } from '../../services/uiLocalization';
 import {
   buildRoomInviteUrl,
@@ -45,6 +49,8 @@ interface RoomsDirectoryProps {
   onCheckInStreak?: () => void;
   personalTeachers: PersonalTeacher[];
   teacherBookings: TeacherLessonBooking[];
+  teacherAccessPasses: TeacherAccessPass[];
+  onRequireTeacherPayment: (action: TeacherPaymentRequestAction) => void;
   onStartLessonWithTeacher: (teacher: PersonalTeacher) => void;
   onBookTeacherSession: (booking: TeacherLessonBooking, teacher: PersonalTeacher) => Promise<void> | void;
   externalSearchQuery?: string;
@@ -62,6 +68,8 @@ export const RoomsDirectory: React.FC<RoomsDirectoryProps> = ({
   userProfile,
   personalTeachers,
   teacherBookings,
+  teacherAccessPasses,
+  onRequireTeacherPayment,
   onStartLessonWithTeacher,
   onBookTeacherSession,
   externalSearchQuery,
@@ -575,6 +583,8 @@ export const RoomsDirectory: React.FC<RoomsDirectoryProps> = ({
             bookings={teacherBookings}
             selectedLanguage={selectedLanguage}
             userProfile={userProfile}
+            teacherAccessPasses={teacherAccessPasses}
+            onRequireTeacherPayment={onRequireTeacherPayment}
             onStartLessonWithTeacher={onStartLessonWithTeacher}
             onBookTeacherSession={onBookTeacherSession}
             onOpenFullTeachersTab={() => onNavigateTab('teachers')}

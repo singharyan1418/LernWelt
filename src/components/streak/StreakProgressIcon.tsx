@@ -1,6 +1,10 @@
 import React, { useId } from 'react';
 import { Flame, Check } from 'lucide-react';
-import { calculateDailyGoalProgress, computeCircleProgressStroke } from '../../services/streakService';
+import {
+  calculateDailyGoalProgress,
+  computeCircleProgressStroke,
+  MINIMUM_DAILY_GOAL_MINUTES
+} from '../../services/streakService';
 import { t } from '../../services/uiLocalization';
 
 export interface StreakProgressIconProps {
@@ -24,7 +28,7 @@ export interface StreakProgressIconProps {
  */
 export const StreakProgressIcon: React.FC<StreakProgressIconProps> = ({
   todayMinutes = 12,
-  dailyGoalMinutes = 15,
+  dailyGoalMinutes = MINIMUM_DAILY_GOAL_MINUTES,
   size = 24,
   strokeWidth = 2.5,
   showFlame = true,

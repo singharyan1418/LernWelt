@@ -113,9 +113,6 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-600 dark:text-[#9BA6B2]">
-                        {t('notif.subtitle', uiLang)}
-                      </p>
                     </div>
                   </div>
 

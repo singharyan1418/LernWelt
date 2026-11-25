@@ -2,14 +2,21 @@ import React, { useState, useMemo } from 'react';
 import { 
   CalendarEvent, 
   LanguageInfo, 
+  TeacherLessonBooking,
   UserProfile 
 } from '../../types';
 import { 
   getStoredCalendarEvents, 
   saveStoredCalendarEvents, 
-  formatDateKey, 
-  downloadIcsFile 
+  formatDateKey 
 } from '../../data/calendarEventsData';
+import {
+  BrowserNotificationPermissionState,
+  isTeacherBookingCalendarEventId,
+  parseCalendarEventStartTimestamp,
+  syncCalendarEventsWithTeacherBookings,
+  TEN_MINUTE_ALERT_WINDOW_MS
+} from '../../services/eventReminderService';
 import { CreateEventModal } from './CreateEventModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import {
@@ -22,7 +29,6 @@ import {
   Calendar as CalendarIcon, 
   CalendarDays,
   Clock, 
-  Users, 
   Plus, 
   ChevronLeft, 
   ChevronRight, 
@@ -30,7 +36,6 @@ import {
   CheckCircle2, 
   Sparkles, 
   Video, 
-  Download, 
   UserCheck,
   Trash2
 } from 'lucide-react';
@@ -39,7 +44,13 @@ interface EventCalendarViewProps {
   selectedLanguage: LanguageInfo;
   supportedLanguages: LanguageInfo[];
   userProfile: UserProfile;
-  onJoinRoom?: (roomId: string) => void;
+  events?: CalendarEvent[];
+  teacherBookings?: TeacherLessonBooking[];
+  onEventsChange?: (updated: CalendarEvent[]) => void;
+  onDismissBookingEvent?: (eventId: string) => void;
+  browserPermission?: BrowserNotificationPermissionState;
+  onBrowserPermissionChange?: (perm: BrowserNotificationPermissionState) => void;
+  onJoinRoom?: (roomId: string, event?: CalendarEvent) => void;
   onShowToast?: (msg: string) => void;
 }
 
@@ -50,6 +61,10 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   selectedLanguage,
   supportedLanguages,
   userProfile,
+  events: controlledEvents,
+  teacherBookings = [],
+  onEventsChange,
+  onDismissBookingEvent,
   onJoinRoom,
   onShowToast
 }) => {
@@ -57,10 +72,12 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   const localeCode = getHtmlLangCode(uiLang);
   const weekdayHeaders = getLocalizedCalendarWeekdays(uiLang);
 
-  // Calendar State - strictly user's planned events
-  const [events, setEvents] = useState<CalendarEvent[]>(() => {
-    return getStoredCalendarEvents().filter(e => e.isUserHost === true);
+  // Calendar State - user's planned events + synced teacher lessons
+  const [internalEvents, setInternalEvents] = useState<CalendarEvent[]>(() => {
+    return syncCalendarEventsWithTeacherBookings(getStoredCalendarEvents(), teacherBookings);
   });
+  const events = controlledEvents ?? internalEvents;
+
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [selectedDateKey, setSelectedDateKey] = useState<string>(() => formatDateKey(new Date()));
   const [viewMode, setViewMode] = useState<ViewMode>('month');
@@ -77,11 +94,15 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [planInitialDate, setPlanInitialDate] = useState<string | undefined>(undefined);
 
-  // Sync state to localStorage
+  // Sync state to localStorage & parent controller
   const handleUpdateEvents = (updated: CalendarEvent[]) => {
     const userOnly = updated.filter(e => e.isUserHost === true);
-    setEvents(userOnly);
-    saveStoredCalendarEvents(userOnly);
+    if (onEventsChange) {
+      onEventsChange(userOnly);
+    } else {
+      setInternalEvents(userOnly);
+      saveStoredCalendarEvents(userOnly);
+    }
   };
 
   const handleCreateEvent = (newEvent: CalendarEvent) => {
@@ -124,7 +145,35 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     }
   };
 
+  const handleToggleReminder = (eventId: string) => {
+    const updated = events.map(evt => {
+      if (evt.id === eventId) {
+        const nextReminder = evt.reminderSet === false;
+        return {
+          ...evt,
+          reminderSet: nextReminder
+        };
+      }
+      return evt;
+    });
+
+    handleUpdateEvents(updated);
+
+    const changed = updated.find(e => e.id === eventId);
+    if (changed) {
+      setSelectedEvent(changed);
+      onShowToast?.(
+        changed.reminderSet !== false
+          ? t('events.reminderToggledOn', uiLang, { title: changed.title })
+          : t('events.reminderToggledOff', uiLang, { title: changed.title })
+      );
+    }
+  };
+
   const handleDeleteEvent = (eventId: string) => {
+    if (isTeacherBookingCalendarEventId(eventId)) {
+      onDismissBookingEvent?.(eventId);
+    }
     const updated = events.filter(e => e.id !== eventId);
     handleUpdateEvents(updated);
     onShowToast?.('Planned event cancelled and removed from your calendar.');
@@ -288,16 +337,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     setIsCreateModalOpen(true);
   };
 
-  // Export all user's planned events to ICS
-  const handleExportAllPlanned = () => {
-    if (events.length === 0) {
-      onShowToast?.('No planned events to export yet. Click "+ Plan New Event" first!');
-      return;
-    }
-    events.forEach(e => downloadIcsFile(e));
-    onShowToast?.(`Exported ${events.length} planned events to calendar!`);
-  };
-
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-5 space-y-6">
       {/* Top Banner & Header */}
@@ -318,16 +357,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
 
         {/* Primary Action Buttons */}
         <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-          <button
-            type="button"
-            onClick={handleExportAllPlanned}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-100 dark:bg-[#1B2430] hover:bg-slate-200 dark:hover:bg-[#232F3F] border border-slate-300 dark:border-[#293342] text-xs font-medium text-slate-800 dark:text-[#F0F2F5] hover:text-slate-900 dark:hover:text-[#F0F2F5] transition-colors cursor-pointer"
-            title={t('events.exportIcs', uiLang)}
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>{t('events.exportIcs', uiLang)}</span>
-          </button>
-
           <button
             type="button"
             onClick={() => {
@@ -672,7 +701,16 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {(eventsByDate.get(selectedDateKey) || []).map(evt => (
+              {(eventsByDate.get(selectedDateKey) || []).map(evt => {
+                const isTeacherLesson = isTeacherBookingCalendarEventId(evt.id);
+                const startMs = parseCalendarEventStartTimestamp(evt);
+                const diffMs = startMs !== null ? startMs - Date.now() : null;
+                const imminentMinutes =
+                  diffMs !== null && diffMs > 0 && diffMs <= TEN_MINUTE_ALERT_WINDOW_MS
+                    ? Math.max(1, Math.ceil(diffMs / 60000))
+                    : null;
+
+                return (
                 <div
                   key={evt.id}
                   onClick={() => handleOpenEventDetails(evt)}
@@ -680,16 +718,25 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-lg">{evt.flag}</span>
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-white dark:bg-[#1B2430] border border-slate-200 dark:border-[#293342] text-slate-700 dark:text-[#F0F2F5]">
                           {evt.cefrLevel}
                         </span>
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-[#6485F5]/15 text-indigo-700 dark:text-[#9278D8] border border-[#6485F5]/30">
-                          {t('events.plannedByYou', uiLang)}
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md border ${
+                          isTeacherLesson
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                            : 'bg-[#6485F5]/15 text-indigo-700 dark:text-[#9278D8] border-[#6485F5]/30'
+                        }`}>
+                          {isTeacherLesson ? t('events.teacherLessonBadge', uiLang) : t('events.plannedByYou', uiLang)}
                         </span>
+                        {imminentMinutes !== null && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 tabular-nums">
+                            {t('events.startingInMinutes', uiLang, { minutes: imminentMinutes })}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-xs font-medium text-indigo-700 dark:text-[#9278D8] flex items-center gap-1 tabular-nums">
+                      <span className="text-xs font-medium text-indigo-700 dark:text-[#9278D8] flex items-center gap-1 tabular-nums shrink-0">
                         <Clock className="w-3 h-3 text-indigo-600 dark:text-[#6485F5]" />
                         {evt.startTime} ({evt.durationMinutes}m)
                       </span>
@@ -714,7 +761,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onJoinRoom(evt.roomId!);
+                            onJoinRoom(evt.roomId!, evt);
                           }}
                           className="px-2.5 py-1 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1"
                         >
@@ -736,7 +783,8 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -767,6 +815,13 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                   month: 'short',
                   day: 'numeric'
                 });
+                const isTeacherLesson = isTeacherBookingCalendarEventId(evt.id);
+                const startMs = parseCalendarEventStartTimestamp(evt);
+                const diffMs = startMs !== null ? startMs - Date.now() : null;
+                const imminentMinutes =
+                  diffMs !== null && diffMs > 0 && diffMs <= TEN_MINUTE_ALERT_WINDOW_MS
+                    ? Math.max(1, Math.ceil(diffMs / 60000))
+                    : null;
 
                 return (
                   <div
@@ -791,9 +846,18 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                           <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#1B2430] text-slate-700 dark:text-[#F0F2F5] border border-slate-200 dark:border-[#293342]">
                             {evt.cefrLevel}
                           </span>
-                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#6485F5]/15 text-indigo-700 dark:text-[#9278D8] border border-[#6485F5]/30">
-                            {t('events.plannedByYou', uiLang)}
+                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md border ${
+                            isTeacherLesson
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                              : 'bg-[#6485F5]/15 text-indigo-700 dark:text-[#9278D8] border-[#6485F5]/30'
+                          }`}>
+                            {isTeacherLesson ? t('events.teacherLessonBadge', uiLang) : t('events.plannedByYou', uiLang)}
                           </span>
+                          {imminentMinutes !== null && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 tabular-nums">
+                              {t('events.startingInMinutes', uiLang, { minutes: imminentMinutes })}
+                            </span>
+                          )}
                           <span className="text-[10px] text-slate-600 dark:text-[#9BA6B2]">
                             • {evt.durationMinutes} {t('common.min', uiLang)}
                           </span>
@@ -824,7 +888,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                     <div className="flex md:flex-col items-center md:items-end justify-between md:justify-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200 dark:border-[#293342]">
                       <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                         <UserCheck className="w-3.5 h-3.5" />
-                        {t('events.hostYou', uiLang)}
+                        {isTeacherLesson ? evt.hostName : t('events.hostYou', uiLang)}
                       </span>
 
                       <div className="flex items-center gap-2">
@@ -833,7 +897,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onJoinRoom(evt.roomId!);
+                              onJoinRoom(evt.roomId!, evt);
                             }}
                             className="px-3.5 py-1.5 rounded-lg bg-[#6485F5] hover:bg-[#7593F7] text-white text-xs font-medium flex items-center gap-1 cursor-pointer border border-[#6485F5]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.2)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_1px_2px_rgba(0,0,0,0.45)] transition-colors"
                           >
@@ -881,8 +945,9 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
         nativeLanguage={userProfile.nativeLanguage}
         onClose={() => setIsDetailsModalOpen(false)}
         onToggleRsvp={handleToggleRsvp}
+        onToggleReminder={handleToggleReminder}
         onDeleteEvent={handleDeleteEvent}
-        onJoinRoom={onJoinRoom}
+        onJoinRoom={(roomId) => onJoinRoom?.(roomId, selectedEvent ?? undefined)}
       />
     </div>
   );

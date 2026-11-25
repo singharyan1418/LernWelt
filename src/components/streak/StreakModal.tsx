@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserStreak } from '../../types';
 import { StreakProgressIcon } from './StreakProgressIcon';
-import { initializeRealUserStreak } from '../../services/streakService';
+import { initializeRealUserStreak, MINIMUM_DAILY_GOAL_MINUTES } from '../../services/streakService';
 import { localizeDayName, localizeMilestone, t } from '../../services/uiLocalization';
 
 interface StreakModalProps {
@@ -55,7 +55,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
       totalXp: 0,
       streakFreezesAvailable: 0,
       streakFreezesUsed: 0,
-      dailyGoalMinutes: 15,
+      dailyGoalMinutes: MINIMUM_DAILY_GOAL_MINUTES,
       dailyDrillGoal: 5,
       todayDrillsCompleted: 0,
       todayMinutes: 0,

@@ -270,7 +270,7 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-[#293342] bg-slate-50 dark:bg-[#10151D]">
-          <div>
+          <div className="flex items-center gap-2">
             {event.isUserHost && onDeleteEvent && (
               <button
                 type="button"
@@ -282,6 +282,20 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{t('events.deleteEventBtn', nativeLanguage)}</span>
+              </button>
+            )}
+            {onToggleReminder && (
+              <button
+                type="button"
+                onClick={() => onToggleReminder(event.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                  event.reminderSet !== false
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+                    : 'bg-slate-100 dark:bg-[#1B2430] text-slate-600 dark:text-[#9BA6B2] border-slate-300 dark:border-[#293342] hover:text-slate-900 dark:hover:text-[#F0F2F5]'
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>{event.reminderSet !== false ? t('events.reminderActive', nativeLanguage) : t('events.reminderMuted', nativeLanguage)}</span>
               </button>
             )}
           </div>

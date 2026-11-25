@@ -1,5 +1,7 @@
 import { StreakDayRecord, StreakMilestone, UserStreak } from '../types';
 
+export const MINIMUM_DAILY_GOAL_MINUTES = 30;
+
 export const DEFAULT_STREAK_MILESTONES: StreakMilestone[] = [
   { days: 3, title: 'Spark Ignited', reward: '+100 XP', icon: '🔥', unlocked: false },
   { days: 7, title: 'Habit Builder', reward: '+250 XP & Bronze Flame', icon: '🥉', unlocked: false },
@@ -97,7 +99,10 @@ export function initializeRealUserStreak(
   const rawTotalXp = typeof existing?.totalXp === 'number' ? Math.max(0, existing.totalXp) : 0;
   const rawFreezes = typeof existing?.streakFreezesAvailable === 'number' ? Math.max(0, existing.streakFreezesAvailable) : 0;
   const rawFreezesUsed = typeof existing?.streakFreezesUsed === 'number' ? Math.max(0, existing.streakFreezesUsed) : 0;
-  const rawDailyGoalMinutes = typeof existing?.dailyGoalMinutes === 'number' ? Math.max(1, existing.dailyGoalMinutes) : 15;
+  const rawDailyGoalMinutes =
+    typeof existing?.dailyGoalMinutes === 'number' && Number.isFinite(existing.dailyGoalMinutes)
+      ? Math.max(MINIMUM_DAILY_GOAL_MINUTES, Math.round(existing.dailyGoalMinutes))
+      : MINIMUM_DAILY_GOAL_MINUTES;
   const rawDailyDrillGoal = typeof existing?.dailyDrillGoal === 'number' ? Math.max(1, existing.dailyDrillGoal) : 5;
 
   let lastCheckInDate = existing?.lastCheckInDate || '';
@@ -385,9 +390,12 @@ export interface DailyGoalProgress {
 
 export function calculateDailyGoalProgress(
   todayMinutes: number = 0,
-  dailyGoalMinutes: number = 15
+  dailyGoalMinutes: number = MINIMUM_DAILY_GOAL_MINUTES
 ): DailyGoalProgress {
-  const safeGoal = Math.max(1, Number.isFinite(dailyGoalMinutes) ? dailyGoalMinutes : 15);
+  const safeGoal = Math.max(
+    MINIMUM_DAILY_GOAL_MINUTES,
+    Number.isFinite(dailyGoalMinutes) ? Math.round(dailyGoalMinutes) : MINIMUM_DAILY_GOAL_MINUTES
+  );
   const safeToday = Math.max(0, Number.isFinite(todayMinutes) ? todayMinutes : 0);
   const rawRatio = safeToday / safeGoal;
   const percent = Math.min(100, Math.max(0, Math.round(rawRatio * 100)));

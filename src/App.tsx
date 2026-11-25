@@ -9,7 +9,12 @@ import { LanguageOnboardingModal } from './components/onboarding/LanguageOnboard
 import { RoomsDirectory } from './components/rooms/RoomsDirectory';
 import { StreakModal } from './components/streak/StreakModal';
 import { LoginInterface } from './components/auth/LoginInterface';
-import { PersonalTeachersView } from './components/teachers/PersonalTeachersView';
+import {
+  BookLessonModal,
+  PersonalTeachersView,
+  TeacherPaymentRequestAction
+} from './components/teachers/PersonalTeachersView';
+import { TeacherPaymentModal } from './components/teachers/TeacherPaymentModal';
 import { AICoachView } from './components/ai/AICoachView';
 import { VerifiedRandomConnect } from './components/random/VerifiedRandomConnect';
 import { GmailWorkspaceView } from './components/gmail/GmailWorkspaceView';
@@ -48,9 +53,20 @@ import {
   mergeTeacherBookings,
   provisionUniversalUserProfile
 } from './services/personalTeacherService';
+import {
+  extractTeacherIdFromRoomId,
+  formatTeacherPassDate,
+  hasActiveAccessForTeacher,
+  isTeacherClassroomRoomId,
+  normalizeTeacherAccessPassList,
+  readStoredTeacherAccessPasses,
+  saveStoredTeacherAccessPass,
+  saveStoredTeacherAccessPasses
+} from './services/teacherAccessService';
 import { INITIAL_PERSONAL_TEACHERS } from './data/teacherData';
 import {
   ActiveTab,
+  CalendarEvent,
   CEFRLevel,
   CorrectionResult,
   LanguageInfo,
@@ -58,6 +74,7 @@ import {
   PersonalTeacher,
   PracticeDrill,
   PronunciationResult,
+  TeacherAccessPass,
   TeacherLessonBooking,
   UserProfile,
   VocabularyWord
@@ -67,6 +84,22 @@ import {
   LANGUAGE_ROOMS,
   SUPPORTED_LANGUAGES
 } from './data/mockData';
+import {
+  getStoredCalendarEvents,
+  saveStoredCalendarEvents
+} from './data/calendarEventsData';
+import {
+  BrowserNotificationPermissionState,
+  dispatchBrowserEventNotification,
+  findDueTenMinuteEvents,
+  getBrowserNotificationPermission,
+  isTeacherBookingCalendarEventId,
+  persistDismissedBookingCalendarIds,
+  persistTriggeredEventAlertKeys,
+  readDismissedBookingCalendarIds,
+  readTriggeredEventAlertKeys,
+  syncCalendarEventsWithTeacherBookings
+} from './services/eventReminderService';
 import {
   getStoredNativeLanguage,
   localizeLanguageName,
@@ -83,6 +116,7 @@ import {
 import {
   persistAudioNotificationsEnabled,
   playIncomingCallRingtone,
+  playIncomingMessageChime,
   readStoredAudioNotificationsEnabled
 } from './services/audioNotificationService';
 import { Sparkles } from 'lucide-react';
@@ -233,8 +267,64 @@ export default function App() {
     return false;
   });
 
+  const initialRoomTeacherId =
+    initialRoomParam && isTeacherClassroomRoomId(initialRoomParam)
+      ? extractTeacherIdFromRoomId(
+          initialRoomParam,
+          INITIAL_PERSONAL_TEACHERS.map((t) => t.id)
+        )
+      : null;
+
+  const [teacherAccessPasses, setTeacherAccessPasses] = useState<TeacherAccessPass[]>(() =>
+    readStoredTeacherAccessPasses(userProfile.id)
+  );
+  const [isTeacherPaymentModalOpen, setIsTeacherPaymentModalOpen] = useState<boolean>(() => {
+    if (!initialRoomParam || !isTeacherClassroomRoomId(initialRoomParam)) return false;
+    return !hasActiveAccessForTeacher(
+      readStoredTeacherAccessPasses(userProfile.id),
+      initialRoomTeacherId
+    );
+  });
+  const [pendingTeacherAction, setPendingTeacherAction] = useState<
+    | { type: 'enter-room'; teacher?: PersonalTeacher; roomId?: string }
+    | { type: 'book-lesson'; teacher?: PersonalTeacher }
+    | { type: 'join-calendar-room'; roomId: string; event?: CalendarEvent; teacher?: PersonalTeacher }
+    | { type: 'unlock-only'; teacher?: PersonalTeacher }
+    | null
+  >(() => {
+    if (!initialRoomParam || !isTeacherClassroomRoomId(initialRoomParam)) return null;
+    if (
+      hasActiveAccessForTeacher(
+        readStoredTeacherAccessPasses(userProfile.id),
+        initialRoomTeacherId
+      )
+    ) {
+      return null;
+    }
+    const matchedTeacher = initialRoomTeacherId
+      ? INITIAL_PERSONAL_TEACHERS.find((t) => t.id === initialRoomTeacherId)
+      : undefined;
+    return {
+      type: 'enter-room',
+      roomId: initialRoomParam,
+      teacher: matchedTeacher
+    };
+  });
+  const [postPaymentBookingTeacher, setPostPaymentBookingTeacher] = useState<PersonalTeacher | null>(null);
+
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    if (initialRoomParam) return 'chat-room';
+    if (initialRoomParam) {
+      if (
+        isTeacherClassroomRoomId(initialRoomParam) &&
+        !hasActiveAccessForTeacher(
+          readStoredTeacherAccessPasses(userProfile.id),
+          initialRoomTeacherId
+        )
+      ) {
+        return 'teachers';
+      }
+      return 'chat-room';
+    }
     if (initialTabParam && VALID_TABS.includes(initialTabParam)) {
       return initialTabParam;
     }
@@ -269,6 +359,20 @@ export default function App() {
     };
     return [defaultBooking];
   });
+  const [dismissedBookingCalendarIds, setDismissedBookingCalendarIds] = useState<string[]>(() =>
+    readDismissedBookingCalendarIds()
+  );
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(() =>
+    syncCalendarEventsWithTeacherBookings(
+      getStoredCalendarEvents(),
+      teacherBookings,
+      readDismissedBookingCalendarIds()
+    )
+  );
+  const [browserNotificationPermission, setBrowserNotificationPermission] =
+    useState<BrowserNotificationPermissionState>(() => getBrowserNotificationPermission());
+  const triggered10mAlertKeysRef = useRef<Set<string>>(readTriggeredEventAlertKeys());
+  const [alertCheckTick, setAlertCheckTick] = useState<number>(0);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState<boolean>(false);
   const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(() => new Set());
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<Set<string>>(() => new Set());
@@ -287,12 +391,28 @@ export default function App() {
   );
   const [currentRoom, setCurrentRoom] = useState<LanguageRoom>(() => {
     const initialLang = resolveInitialLanguage(userProfile);
-    if (initialRoomParam) {
+    if (
+      initialRoomParam &&
+      (!isTeacherClassroomRoomId(initialRoomParam) ||
+        hasActiveAccessForTeacher(
+          readStoredTeacherAccessPasses(userProfile.id),
+          initialRoomTeacherId
+        ))
+    ) {
       return resolveRoomFromId(initialRoomParam, LANGUAGE_ROOMS, initialLang);
     }
     return LANGUAGE_ROOMS.find((r) => r.languageCode === initialLang.code) || LANGUAGE_ROOMS[0];
   });
-  const [isInsideRoom, setIsInsideRoom] = useState<boolean>(() => Boolean(initialRoomParam));
+  const [isInsideRoom, setIsInsideRoom] = useState<boolean>(() => {
+    if (!initialRoomParam) return false;
+    if (isTeacherClassroomRoomId(initialRoomParam)) {
+      return hasActiveAccessForTeacher(
+        readStoredTeacherAccessPasses(userProfile.id),
+        initialRoomTeacherId
+      );
+    }
+    return true;
+  });
   const [isRandomMatchActive, setIsRandomMatchActive] = useState<boolean>(false);
   const [vocabulary, setVocabulary] = useState<VocabularyWord[]>(() => readInitialRealVocabulary());
   const seenCorrectionIdsRef = useRef<Set<string>>(
@@ -323,6 +443,8 @@ export default function App() {
   latestUserProfileRef.current = userProfile;
   const latestVocabularyRef = useRef<VocabularyWord[]>(vocabulary);
   latestVocabularyRef.current = vocabulary;
+  const latestAudioNotifEnabledRef = useRef<boolean>(audioNotificationsEnabled);
+  latestAudioNotifEnabledRef.current = audioNotificationsEnabled;
 
   // Keep html[lang] and native language key synced whenever nativeLanguage updates
   useEffect(() => {
@@ -445,21 +567,35 @@ export default function App() {
   }, [teacherBookings]);
 
   useEffect(() => {
+    setCalendarEvents((prev) => {
+      const synced = syncCalendarEventsWithTeacherBookings(
+        prev,
+        teacherBookings,
+        dismissedBookingCalendarIds
+      );
+      saveStoredCalendarEvents(synced);
+      return synced;
+    });
+  }, [teacherBookings, dismissedBookingCalendarIds]);
+
+  useEffect(() => {
     try {
       localStorage.setItem('lernwelt_partner_requests', JSON.stringify(partnerRequests));
     } catch {}
   }, [partnerRequests]);
 
   const notifications = React.useMemo(() => {
+    void alertCheckTick;
     return aggregateAllNotifications(
       teacherBookings,
       personalTeachers,
       vocabulary,
       partnerRequests,
       readNotificationIds,
-      dismissedNotificationIds
+      dismissedNotificationIds,
+      calendarEvents
     );
-  }, [teacherBookings, personalTeachers, vocabulary, partnerRequests, readNotificationIds, dismissedNotificationIds]);
+  }, [teacherBookings, personalTeachers, vocabulary, partnerRequests, readNotificationIds, dismissedNotificationIds, calendarEvents, alertCheckTick]);
 
   const unreadNotificationCount = React.useMemo(() => {
     return countUnreadNotifications(notifications);
@@ -635,7 +771,20 @@ export default function App() {
           }
           if (initialRoomParam) {
             const matchedCustom = data.rooms.find((r: LanguageRoom) => r.id === initialRoomParam);
-            if (matchedCustom) {
+            const customRoomTeacherId = matchedCustom
+              ? extractTeacherIdFromRoomId(
+                  matchedCustom.id,
+                  INITIAL_PERSONAL_TEACHERS.map((t) => t.id)
+                )
+              : null;
+            if (
+              matchedCustom &&
+              (!isTeacherClassroomRoomId(matchedCustom.id) ||
+                hasActiveAccessForTeacher(
+                  readStoredTeacherAccessPasses(latestUserProfileRef.current.id),
+                  customRoomTeacherId
+                ))
+            ) {
               setCurrentRoom(matchedCustom);
             }
           }
@@ -643,7 +792,18 @@ export default function App() {
       })
       .catch(() => {});
 
-    if (initialRoomParam && !LANGUAGE_ROOMS.some((r) => r.id === initialRoomParam)) {
+    if (
+      initialRoomParam &&
+      !LANGUAGE_ROOMS.some((r) => r.id === initialRoomParam) &&
+      (!isTeacherClassroomRoomId(initialRoomParam) ||
+        hasActiveAccessForTeacher(
+          readStoredTeacherAccessPasses(latestUserProfileRef.current.id),
+          extractTeacherIdFromRoomId(
+            initialRoomParam,
+            INITIAL_PERSONAL_TEACHERS.map((t) => t.id)
+          )
+        ))
+    ) {
       fetch(`/api/rooms/${encodeURIComponent(initialRoomParam)}`)
         .then((res) => res.json())
         .then((data) => {
@@ -684,18 +844,84 @@ export default function App() {
 
       const roomParam = params.get('room');
       if (roomParam) {
-        const resolved = resolveRoomFromId(roomParam, LANGUAGE_ROOMS, SUPPORTED_LANGUAGES[0]);
-        setCurrentRoom(resolved);
-        const lang = SUPPORTED_LANGUAGES.find((l) => l.code === resolved.languageCode);
-        if (lang) setSelectedLanguage(lang);
-        setActiveTab('chat-room');
-        setInitialChatOpen(false);
-        setIsInsideRoom(true);
+        const roomTeacherId = isTeacherClassroomRoomId(roomParam)
+          ? extractTeacherIdFromRoomId(
+              roomParam,
+              INITIAL_PERSONAL_TEACHERS.map((t) => t.id)
+            )
+          : null;
+        if (
+          isTeacherClassroomRoomId(roomParam) &&
+          !hasActiveAccessForTeacher(
+            readStoredTeacherAccessPasses(latestUserProfileRef.current.id),
+            roomTeacherId
+          )
+        ) {
+          const matchedTeacher = roomTeacherId
+            ? INITIAL_PERSONAL_TEACHERS.find((t) => t.id === roomTeacherId)
+            : undefined;
+          setActiveTab('teachers');
+          setIsInsideRoom(false);
+          setPendingTeacherAction({
+            type: 'enter-room',
+            roomId: roomParam,
+            teacher: matchedTeacher
+          });
+          setIsTeacherPaymentModalOpen(true);
+        } else {
+          const resolved = resolveRoomFromId(roomParam, LANGUAGE_ROOMS, SUPPORTED_LANGUAGES[0]);
+          setCurrentRoom(resolved);
+          const lang = SUPPORTED_LANGUAGES.find((l) => l.code === resolved.languageCode);
+          if (lang) setSelectedLanguage(lang);
+          setActiveTab('chat-room');
+          setInitialChatOpen(false);
+          setIsInsideRoom(true);
+        }
       }
     } catch {
       // Ignore URL search param errors
     }
   }, []);
+
+  // Hydrate per-teacher ₹999 monthly Teacher Access Passes from server & localStorage per learner account
+  useEffect(() => {
+    if (!userProfile.id) return;
+    const cached = readStoredTeacherAccessPasses(userProfile.id);
+    setTeacherAccessPasses(cached);
+
+    const qs = new URLSearchParams({
+      userId: userProfile.id,
+      ...(userProfile.email ? { email: userProfile.email } : {})
+    });
+    fetch(`/api/teachers/access?${qs.toString()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.passes)) {
+          const serverPasses = normalizeTeacherAccessPassList(data.passes);
+          let merged = cached;
+          for (const pass of serverPasses) {
+            merged = saveStoredTeacherAccessPass(pass);
+          }
+          if (serverPasses.length === 0 && cached.length > 0) {
+            saveStoredTeacherAccessPasses(userProfile.id, cached);
+          }
+          setTeacherAccessPasses(merged);
+        }
+      })
+      .catch(() => {});
+  }, [userProfile.id, userProfile.email]);
+
+  // Periodically check per-teacher pass expiry while app stays open
+  useEffect(() => {
+    if (teacherAccessPasses.length === 0) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      if (teacherAccessPasses.some((pass) => now >= pass.expiresAt)) {
+        setAlertCheckTick((prev) => prev + 1);
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [teacherAccessPasses]);
 
   const buildUrlWithParams = useCallback((nextParams: Record<string, string | undefined>) => {
     try {
@@ -746,12 +972,39 @@ export default function App() {
     setSelectedLanguage(targetLanguage);
 
     if (invitedRoomId) {
-      const invitedRoom = resolveRoomFromId(invitedRoomId, roomsList, targetLanguage);
-      setCurrentRoom(invitedRoom);
-      setActiveTab('chat-room');
-      setInitialChatOpen(false);
-      setIsInsideRoom(true);
-      setInvitedRoomId(null);
+      const invitedTeacherId = isTeacherClassroomRoomId(invitedRoomId)
+        ? extractTeacherIdFromRoomId(
+            invitedRoomId,
+            personalTeachers.map((t) => t.id)
+          )
+        : null;
+      if (
+        isTeacherClassroomRoomId(invitedRoomId) &&
+        !hasActiveAccessForTeacher(
+          readStoredTeacherAccessPasses(sanitizedProfile.id),
+          invitedTeacherId
+        )
+      ) {
+        const matchedTeacher = invitedTeacherId
+          ? personalTeachers.find((t) => t.id === invitedTeacherId)
+          : undefined;
+        setActiveTab('teachers');
+        setIsInsideRoom(false);
+        setPendingTeacherAction({
+          type: 'enter-room',
+          roomId: invitedRoomId,
+          teacher: matchedTeacher
+        });
+        setIsTeacherPaymentModalOpen(true);
+        setInvitedRoomId(null);
+      } else {
+        const invitedRoom = resolveRoomFromId(invitedRoomId, roomsList, targetLanguage);
+        setCurrentRoom(invitedRoom);
+        setActiveTab('chat-room');
+        setInitialChatOpen(false);
+        setIsInsideRoom(true);
+        setInvitedRoomId(null);
+      }
     } else {
       const matchingRoom = roomsList.find((r) => r.languageCode === targetLanguage.code) || roomsList[0];
       setCurrentRoom(matchingRoom);
@@ -797,6 +1050,9 @@ export default function App() {
     seenCorrectionIdsRef.current = new Set();
     setVocabulary([]);
     setIsRandomMatchActive(false);
+    setTeacherAccessPasses([]);
+    setIsTeacherPaymentModalOpen(false);
+    setPendingTeacherAction(null);
     setUserProfile((prev) => sanitizeToRealStatsProfile({ ...prev, statsSource: undefined, isVerified: false, verifiedId: undefined }, []));
     signOutFromGmail().catch(() => {});
     realtimePresence.cleanup();
@@ -941,7 +1197,73 @@ export default function App() {
     );
   };
 
+  const resolveTeacherForRoomId = useCallback(
+    (roomId?: string | null, event?: CalendarEvent): PersonalTeacher | undefined => {
+      const matchedBooking = teacherBookings.find(
+        (b) =>
+          (roomId && b.roomId === roomId) ||
+          (event && event.id === `teacher_booking_${b.id}`)
+      );
+      const extractedId =
+        matchedBooking?.teacherId ||
+        extractTeacherIdFromRoomId(
+          roomId,
+          personalTeachers.map((pt) => pt.id)
+        );
+
+      const matchedTeacher =
+        personalTeachers.find(
+          (pt) =>
+            (extractedId && pt.id.toLowerCase() === extractedId.toLowerCase()) ||
+            (event && pt.name === event.hostName)
+        ) ||
+        (matchedBooking
+          ? {
+              id: matchedBooking.teacherId,
+              name: matchedBooking.teacherName,
+              avatarUrl: matchedBooking.teacherAvatar,
+              country: 'Global',
+              flag: matchedBooking.flag,
+              languageCode: matchedBooking.languageCode,
+              languageName: matchedBooking.languageName,
+              alsoSpeaks: ['English'],
+              cefrRange: 'All Levels',
+              specialties: [matchedBooking.focusArea],
+              credentials: 'Personal Language Teacher',
+              yearsExperience: 5,
+              rating: 5.0,
+              lessonsCompleted: 20,
+              availability: 'Available Now' as const,
+              nextAvailableSlots: [matchedBooking.slotLabel],
+              bio: matchedBooking.learningGoal,
+              lessonFocus: matchedBooking.learningGoal,
+              accessLabel: '₹999 / Month Pass'
+            }
+          : undefined);
+
+      return matchedTeacher;
+    },
+    [personalTeachers, teacherBookings]
+  );
+
   const handleSelectRoom = (room: LanguageRoom) => {
+    if (room.roomKind === 'teacher-classroom' || isTeacherClassroomRoomId(room.id)) {
+      const targetTeacher = resolveTeacherForRoomId(room.id);
+      const targetTeacherId =
+        targetTeacher?.id ||
+        extractTeacherIdFromRoomId(
+          room.id,
+          personalTeachers.map((pt) => pt.id)
+        );
+      if (!hasActiveAccessForTeacher(teacherAccessPasses, targetTeacherId)) {
+        requestTeacherPayment({
+          type: 'enter-room',
+          roomId: room.id,
+          teacher: targetTeacher
+        });
+        return;
+      }
+    }
     setCurrentRoom(room);
     const lang = SUPPORTED_LANGUAGES.find((l) => l.code === room.languageCode);
     if (lang) {
@@ -1082,6 +1404,9 @@ export default function App() {
       };
       try {
         localStorage.setItem('lernwelt_user', JSON.stringify(next));
+        if (next.streak) {
+          localStorage.setItem(REAL_STREAK_STORAGE_KEY, JSON.stringify(next.streak));
+        }
         if (next.isVerified && next.verifiedId) {
           localStorage.setItem(
             VERIFIED_SESSION_STORAGE_KEY,
@@ -1093,49 +1418,260 @@ export default function App() {
     });
   };
 
+  const requestTeacherPayment = useCallback(
+    (
+      action:
+        | TeacherPaymentRequestAction
+        | { type: 'join-calendar-room'; roomId: string; event?: CalendarEvent; teacher?: PersonalTeacher }
+        | { type: 'enter-room'; teacher?: PersonalTeacher; roomId?: string }
+    ) => {
+      const targetTeacher =
+        ('teacher' in action && action.teacher) ||
+        ('roomId' in action
+          ? resolveTeacherForRoomId(
+              action.roomId,
+              'event' in action ? action.event : undefined
+            )
+          : undefined);
+      setPendingTeacherAction({ ...action, teacher: targetTeacher });
+      setIsTeacherPaymentModalOpen(true);
+      showToast(
+        t('teachers.payRequiredToast', latestUserProfileRef.current.nativeLanguage, {
+          name: targetTeacher?.name || 'this teacher'
+        })
+      );
+    },
+    [resolveTeacherForRoomId]
+  );
+
+  const enterTeacherClassroomAuthorized = useCallback(
+    (teacher: PersonalTeacher, explicitUser?: UserProfile) => {
+      const activeUser = explicitUser || latestUserProfileRef.current;
+      const classroomRoom = buildTeacherClassroomRoom(teacher, activeUser.name);
+      setCurrentRoom(classroomRoom);
+      const lang = SUPPORTED_LANGUAGES.find((l) => l.code === teacher.languageCode);
+      if (lang) setSelectedLanguage(lang);
+      setAutoStartMediaMode(undefined);
+      setInitialChatOpen(false);
+      setIsInsideRoom(true);
+      setActiveTab('chat-room');
+
+      fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          room: classroomRoom,
+          userId: activeUser.id,
+          userEmail: activeUser.email
+        })
+      }).catch(() => {});
+
+      try {
+        const nextUrl = buildUrlWithParams({ room: classroomRoom.id, tab: 'chat-room' });
+        window.history.replaceState({}, '', nextUrl);
+      } catch {}
+
+      showToast(t('toast.enteredClassroom', activeUser.nativeLanguage, { name: teacher.name }));
+    },
+    [buildUrlWithParams]
+  );
+
   const handleStartLessonWithTeacher = (teacher: PersonalTeacher) => {
-    const classroomRoom = buildTeacherClassroomRoom(teacher, userProfile.name);
-    setCurrentRoom(classroomRoom);
-    const lang = SUPPORTED_LANGUAGES.find((l) => l.code === teacher.languageCode);
-    if (lang) setSelectedLanguage(lang);
-    setAutoStartMediaMode(undefined);
-    setInitialChatOpen(false);
-    setIsInsideRoom(true);
-    setActiveTab('chat-room');
-
-    fetch('/api/rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: classroomRoom })
-    }).catch(() => {});
-
-    try {
-      const nextUrl = buildUrlWithParams({ room: classroomRoom.id, tab: 'chat-room' });
-      window.history.replaceState({}, '', nextUrl);
-    } catch {}
-
-    showToast(t('toast.enteredClassroom', userProfile.nativeLanguage, { name: teacher.name }));
+    if (!hasActiveAccessForTeacher(teacherAccessPasses, teacher.id)) {
+      requestTeacherPayment({ type: 'enter-room', teacher });
+      return;
+    }
+    enterTeacherClassroomAuthorized(teacher);
   };
+
+  const joinCalendarEventRoomAuthorized = useCallback(
+    (roomId: string, event?: CalendarEvent) => {
+      const isTeacherEvent =
+        (event && isTeacherBookingCalendarEventId(event.id)) ||
+        isTeacherClassroomRoomId(roomId);
+
+      let resolvedRoom: LanguageRoom | undefined = roomsList.find((r) => r.id === roomId);
+
+      if (!resolvedRoom && isTeacherEvent) {
+        const matchedBooking = teacherBookings.find(
+          (b) =>
+            b.roomId === roomId ||
+            (event && event.id === `teacher_booking_${b.id}`)
+        );
+        const matchedTeacher =
+          personalTeachers.find(
+            (pt) =>
+              (matchedBooking && pt.id === matchedBooking.teacherId) ||
+              (event && pt.name === event.hostName)
+          ) ||
+          (matchedBooking
+            ? {
+                id: matchedBooking.teacherId,
+                name: matchedBooking.teacherName,
+                avatarUrl: matchedBooking.teacherAvatar,
+                country: 'Global',
+                flag: matchedBooking.flag,
+                languageCode: matchedBooking.languageCode,
+                languageName: matchedBooking.languageName,
+                alsoSpeaks: ['English'],
+                cefrRange: 'All Levels',
+                specialties: [matchedBooking.focusArea],
+                credentials: 'Personal Language Teacher',
+                yearsExperience: 5,
+                rating: 5.0,
+                lessonsCompleted: 20,
+                availability: 'Available Now' as const,
+                nextAvailableSlots: [matchedBooking.slotLabel],
+                bio: matchedBooking.learningGoal,
+                lessonFocus: matchedBooking.learningGoal,
+                accessLabel: '₹999 / Month Pass'
+              }
+            : undefined);
+
+        if (matchedTeacher) {
+          const classroom = buildTeacherClassroomRoom(matchedTeacher, latestUserProfileRef.current.name);
+          resolvedRoom = roomId ? { ...classroom, id: roomId } : classroom;
+        }
+      }
+
+      if (!resolvedRoom) {
+        const eventLang = event?.languageCode;
+        resolvedRoom =
+          (eventLang ? roomsList.find((r) => r.languageCode === eventLang) : undefined) ||
+          roomsList[0];
+      }
+
+      setCurrentRoom(resolvedRoom);
+      const lang = SUPPORTED_LANGUAGES.find((l) => l.code === resolvedRoom.languageCode);
+      if (lang) setSelectedLanguage(lang);
+      setAutoStartMediaMode(undefined);
+      setInitialChatOpen(false);
+      setIsInsideRoom(true);
+      setActiveTab('chat-room');
+      showToast(
+        t('toast.joinedEvent', latestUserProfileRef.current.nativeLanguage, {
+          flag: resolvedRoom.flag,
+          title: event?.title || resolvedRoom.title
+        })
+      );
+    },
+    [personalTeachers, roomsList, teacherBookings]
+  );
+
+  const handleJoinCalendarEventRoom = useCallback(
+    (roomId: string, event?: CalendarEvent) => {
+      const isTeacherEvent =
+        (event && isTeacherBookingCalendarEventId(event.id)) ||
+        isTeacherClassroomRoomId(roomId);
+
+      if (isTeacherEvent) {
+        const targetTeacher = resolveTeacherForRoomId(roomId, event);
+        const targetTeacherId =
+          targetTeacher?.id ||
+          extractTeacherIdFromRoomId(
+            roomId,
+            personalTeachers.map((pt) => pt.id)
+          );
+        if (!hasActiveAccessForTeacher(teacherAccessPasses, targetTeacherId)) {
+          requestTeacherPayment({
+            type: 'join-calendar-room',
+            roomId,
+            event,
+            teacher: targetTeacher
+          });
+          return;
+        }
+      }
+
+      joinCalendarEventRoomAuthorized(roomId, event);
+    },
+    [
+      joinCalendarEventRoomAuthorized,
+      personalTeachers,
+      requestTeacherPayment,
+      resolveTeacherForRoomId,
+      teacherAccessPasses
+    ]
+  );
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const runTenMinuteAlertCheck = () => {
+      const currentPermission = getBrowserNotificationPermission();
+      setBrowserNotificationPermission((prev) =>
+        prev === currentPermission ? prev : currentPermission
+      );
+
+      const dueAlerts = findDueTenMinuteEvents(
+        calendarEvents,
+        Date.now(),
+        triggered10mAlertKeysRef.current
+      );
+
+      if (dueAlerts.length === 0) return;
+
+      for (const dueAlert of dueAlerts) {
+        triggered10mAlertKeysRef.current.add(dueAlert.triggerKey);
+        const dispatched = dispatchBrowserEventNotification(dueAlert, {
+          uiLang: latestUserProfileRef.current.nativeLanguage,
+          onClick: (evt) => {
+            if (evt.roomId) {
+              handleJoinCalendarEventRoom(evt.roomId, evt);
+            } else {
+              setActiveTab('events-calendar');
+              setIsInsideRoom(false);
+            }
+          }
+        });
+        showToast(dispatched.title);
+        if (latestAudioNotifEnabledRef.current) {
+          playIncomingMessageChime({ enabled: true });
+        }
+      }
+
+      persistTriggeredEventAlertKeys(triggered10mAlertKeysRef.current);
+      setAlertCheckTick((prev) => prev + 1);
+    };
+
+    runTenMinuteAlertCheck();
+    const intervalId = setInterval(runTenMinuteAlertCheck, 15_000);
+    return () => clearInterval(intervalId);
+  }, [isLoggedIn, calendarEvents, handleJoinCalendarEventRoom]);
 
   const handleBookTeacherSession = async (
     booking: TeacherLessonBooking,
     teacher: PersonalTeacher
   ) => {
+    if (!hasActiveAccessForTeacher(teacherAccessPasses, teacher.id)) {
+      requestTeacherPayment({ type: 'book-lesson', teacher });
+      throw new Error('TEACHER_PASS_REQUIRED');
+    }
+
     const classroomRoom = buildTeacherClassroomRoom(teacher, userProfile.name);
-    setTeacherBookings((prev) => mergeTeacherBookings(prev, booking));
 
     const res = await fetch('/api/teachers/bookings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ booking, classroomRoom })
+      body: JSON.stringify({
+        booking,
+        classroomRoom,
+        userEmail: userProfile.email
+      })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.booking) {
-        setTeacherBookings((prev) => mergeTeacherBookings(prev, data.booking));
-      }
+    if (res.status === 402) {
+      requestTeacherPayment({ type: 'book-lesson', teacher });
+      throw new Error('TEACHER_PASS_REQUIRED');
     }
+
+    if (!res.ok) {
+      throw new Error('BOOKING_FAILED');
+    }
+
+    const data = await res.json();
+    const confirmedBooking = data?.booking || booking;
+    setTeacherBookings((prev) => mergeTeacherBookings(prev, confirmedBooking));
 
     showToast(
       t('toast.bookedTeacher', userProfile.nativeLanguage, {
@@ -1262,6 +1798,29 @@ export default function App() {
     if (notification.actionPayload?.type === 'join-room') {
       const targetRoomId = notification.actionPayload.roomId;
       if (targetRoomId) {
+        const isTeacherNotif =
+          isTeacherClassroomRoomId(targetRoomId) || Boolean(notification.actionPayload.teacherId);
+        if (isTeacherNotif) {
+          const matchedTeacher =
+            personalTeachers.find(
+              (pt) => pt.id === notification.actionPayload?.teacherId
+            ) || resolveTeacherForRoomId(targetRoomId);
+          const targetTeacherId =
+            notification.actionPayload.teacherId ||
+            matchedTeacher?.id ||
+            extractTeacherIdFromRoomId(
+              targetRoomId,
+              personalTeachers.map((pt) => pt.id)
+            );
+          if (!hasActiveAccessForTeacher(teacherAccessPasses, targetTeacherId)) {
+            requestTeacherPayment({
+              type: 'enter-room',
+              teacher: matchedTeacher,
+              roomId: targetRoomId
+            });
+            return;
+          }
+        }
         const existingRoom = roomsList.find((r) => r.id === targetRoomId);
         if (existingRoom) {
           setCurrentRoom(existingRoom);
@@ -1475,6 +2034,57 @@ export default function App() {
         />
       )}
 
+      {isTeacherPaymentModalOpen && (
+        <TeacherPaymentModal
+          userProfile={userProfile}
+          targetTeacher={
+            pendingTeacherAction && 'teacher' in pendingTeacherAction
+              ? pendingTeacherAction.teacher
+              : undefined
+          }
+          onClose={() => {
+            setIsTeacherPaymentModalOpen(false);
+            setPendingTeacherAction(null);
+          }}
+          onPaymentSuccess={(pass) => {
+            const updatedPasses = saveStoredTeacherAccessPass(pass);
+            setTeacherAccessPasses(updatedPasses);
+            setIsTeacherPaymentModalOpen(false);
+            const actionToRun = pendingTeacherAction;
+            setPendingTeacherAction(null);
+
+            showToast(
+              t('teachers.payUnlockedToast', userProfile.nativeLanguage, {
+                name: pass.teacherName || 'teacher',
+                date: formatTeacherPassDate(pass.expiresAt, userProfile.nativeLanguage)
+              })
+            );
+
+            if (!actionToRun) return;
+            if (actionToRun.type === 'enter-room') {
+              if (actionToRun.teacher) {
+                enterTeacherClassroomAuthorized(actionToRun.teacher);
+              } else if (actionToRun.roomId) {
+                joinCalendarEventRoomAuthorized(actionToRun.roomId);
+              }
+            } else if (actionToRun.type === 'book-lesson' && actionToRun.teacher) {
+              setPostPaymentBookingTeacher(actionToRun.teacher);
+            } else if (actionToRun.type === 'join-calendar-room') {
+              joinCalendarEventRoomAuthorized(actionToRun.roomId, actionToRun.event);
+            }
+          }}
+        />
+      )}
+
+      {postPaymentBookingTeacher && (
+        <BookLessonModal
+          teacher={postPaymentBookingTeacher}
+          userProfile={userProfile}
+          onClose={() => setPostPaymentBookingTeacher(null)}
+          onConfirmBooking={handleBookTeacherSession}
+        />
+      )}
+
       {/* Main Body Content */}
       <main className="flex-1 w-full max-w-full min-w-0 lg:overflow-y-auto">
         {activeTab === 'chat-room' && !isInsideRoom && (
@@ -1500,6 +2110,8 @@ export default function App() {
             onCheckInStreak={handleCheckInToday}
             personalTeachers={personalTeachers}
             teacherBookings={teacherBookings}
+            teacherAccessPasses={teacherAccessPasses}
+            onRequireTeacherPayment={requestTeacherPayment}
             onStartLessonWithTeacher={handleStartLessonWithTeacher}
             onBookTeacherSession={handleBookTeacherSession}
             onNavigateLabSubTab={(subTab) => {
@@ -1542,6 +2154,8 @@ export default function App() {
             selectedLanguage={selectedLanguage}
             supportedLanguages={SUPPORTED_LANGUAGES}
             userProfile={userProfile}
+            teacherAccessPasses={teacherAccessPasses}
+            onRequireTeacherPayment={requestTeacherPayment}
             onStartLessonWithTeacher={handleStartLessonWithTeacher}
             onBookTeacherSession={handleBookTeacherSession}
             onCancelBooking={handleCancelTeacherBooking}
@@ -1618,21 +2232,22 @@ export default function App() {
             selectedLanguage={selectedLanguage}
             supportedLanguages={SUPPORTED_LANGUAGES}
             userProfile={userProfile}
-            onJoinRoom={(roomId) => {
-              const matchingRoom = roomsList.find((r) => r.id === roomId) || roomsList[0];
-              setCurrentRoom(matchingRoom);
-              const lang = SUPPORTED_LANGUAGES.find((l) => l.code === matchingRoom.languageCode);
-              if (lang) setSelectedLanguage(lang);
-              setInitialChatOpen(false);
-              setIsInsideRoom(true);
-              setActiveTab('chat-room');
-              showToast(
-                t('toast.joinedEvent', userProfile.nativeLanguage, {
-                  flag: matchingRoom.flag,
-                  title: matchingRoom.title
-                })
-              );
+            events={calendarEvents}
+            teacherBookings={teacherBookings}
+            onEventsChange={(updated) => {
+              setCalendarEvents(updated);
+              saveStoredCalendarEvents(updated);
             }}
+            onDismissBookingEvent={(eventId) => {
+              setDismissedBookingCalendarIds((prev) => {
+                const next = prev.includes(eventId) ? prev : [...prev, eventId];
+                persistDismissedBookingCalendarIds(next);
+                return next;
+              });
+            }}
+            browserPermission={browserNotificationPermission}
+            onBrowserPermissionChange={setBrowserNotificationPermission}
+            onJoinRoom={handleJoinCalendarEventRoom}
             onShowToast={showToast}
           />
         )}

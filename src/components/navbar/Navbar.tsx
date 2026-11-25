@@ -2,7 +2,7 @@ import React from 'react';
 import { ActiveTab, LanguageInfo, UserProfile } from '../../types';
 import { createInitialsAvatarDataUri } from '../../data/teacherData';
 import { localizeLanguageName, normalizeNativeLanguage, t } from '../../services/uiLocalization';
-import { initializeRealUserStreak } from '../../services/streakService';
+import { initializeRealUserStreak, MINIMUM_DAILY_GOAL_MINUTES } from '../../services/streakService';
 import { StreakProgressIcon } from '../streak/StreakProgressIcon';
 import { BRAND_IMAGES } from '../../utils/brandAssets';
 import {
@@ -141,6 +141,8 @@ function resolveSectionTitle(activeTab: ActiveTab, uiLang: ReturnType<typeof nor
       return 'Gmail Workspace';
     case 'tasks':
       return 'Study Tasks';
+    case 'classroom':
+      return t('nav.classroom', uiLang);
     default:
       return t('nav.rooms', uiLang);
   }
@@ -181,7 +183,7 @@ export const DesktopSidebar: React.FC<NavbarProps> = ({
       totalXp: 0,
       streakFreezesAvailable: 0,
       streakFreezesUsed: 0,
-      dailyGoalMinutes: 15,
+      dailyGoalMinutes: MINIMUM_DAILY_GOAL_MINUTES,
       dailyDrillGoal: 5,
       todayDrillsCompleted: 0,
       todayMinutes: 0,
@@ -189,7 +191,7 @@ export const DesktopSidebar: React.FC<NavbarProps> = ({
       todayCompleted: false
     }
   );
-  const dailyPercent = Math.min(100, Math.round((streak.todayMinutes / Math.max(1, streak.dailyGoalMinutes)) * 100));
+  const dailyPercent = Math.min(100, Math.round((streak.todayMinutes / Math.max(MINIMUM_DAILY_GOAL_MINUTES, streak.dailyGoalMinutes)) * 100));
 
   const handleNavClick = (tab: ActiveTab) => {
     setActiveTab(tab);

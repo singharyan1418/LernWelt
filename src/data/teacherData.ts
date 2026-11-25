@@ -44,7 +44,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 17:00', 'Today · 19:30', 'Tomorrow · 10:00'],
     bio: 'Structured 1-on-1 German coaching tailored to your speaking speed. We untangle cases, word order, and Goethe B1–C1 speaking tasks step by step.',
     lessonFocus: 'Live speaking diagnostics, dative/accusative mastery, and natural DACH phrasing',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_es_mateo',
@@ -65,7 +65,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 16:30', 'Today · 20:00', 'Tomorrow · 14:00'],
     bio: 'Patient, interactive Spanish lessons focused on real-world fluency, past-tense storytelling, and intuitive subjunctive usage without rote memorization.',
     lessonFocus: 'Subjunctive confidence, rapid listening comprehension, and DELE oral prep',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_en_claire',
@@ -86,7 +86,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 15:30', 'Today · 18:00', 'Tomorrow · 09:30'],
     bio: 'Clear, practical 1-on-1 English coaching for interviews, presentations, IELTS/CAE preparation, and nuanced C1–C2 phrasing.',
     lessonFocus: 'Executive fluency, pronunciation clarity, and idiomatic C1 phrasing',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_fr_camille',
@@ -107,7 +107,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 18:30', 'Tomorrow · 11:00', 'Tomorrow · 17:00'],
     bio: 'Master French rhythm, nasal vowels, and spontaneous conversation in a supportive 1-on-1 classroom with live board corrections.',
     lessonFocus: 'French phonetics, DELF/DALF oral arguments, and everyday Parisian speech',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_ja_kenji',
@@ -128,7 +128,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 21:00', 'Tomorrow · 08:30', 'Tomorrow · 19:00'],
     bio: 'Step-by-step Japanese guidance covering natural particles, pitch accent, polite Keigo for work, and everyday Tokyo conversation.',
     lessonFocus: 'Natural particle intuition, Keigo etiquette, and JLPT reading/speaking',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_it_lorenzo',
@@ -149,7 +149,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 17:30', 'Tomorrow · 12:30', 'Tomorrow · 18:00'],
     bio: 'Warm, structured Italian sessions designed to get you speaking full sentences from day one while refining congiuntivo andcombined pronouns.',
     lessonFocus: 'Expressive Italian conversation, verb tenses, and CILS preparation',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_zh_meilin',
@@ -170,7 +170,7 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 20:30', 'Tomorrow · 09:00', 'Tomorrow · 16:00'],
     bio: 'Master the four Mandarin tones with visual pitch feedback, build practical sentence patterns fast, and speak confidently in daily or business settings.',
     lessonFocus: 'Tone pair mastery, HSK sentence structures, and practical speaking',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   },
   {
     id: 'teacher_pt_rafael',
@@ -191,6 +191,6 @@ export const INITIAL_PERSONAL_TEACHERS: PersonalTeacher[] = [
     nextAvailableSlots: ['Today · 16:00', 'Today · 19:00', 'Tomorrow · 15:00'],
     bio: 'Personalized Portuguese coaching covering both European and Brazilian usage, clear rhythm training, and practical conversation.',
     lessonFocus: 'Natural cadence, subjunctive triggers, and everyday fluency',
-    accessLabel: 'Open 1-on-1 Access'
+    accessLabel: '₹999 / Month Pass'
   }
 ];
