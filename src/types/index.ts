@@ -321,7 +321,7 @@ export interface TeacherLessonBooking {
   createdAt: number;
 }
 
-export type TeacherPaymentMethod = 'upi' | 'card' | 'netbanking';
+export type TeacherPaymentMethod = 'qr';
 
 export interface TeacherAccessPass {
   id: string;

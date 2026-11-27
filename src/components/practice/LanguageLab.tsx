@@ -289,22 +289,8 @@ export const LanguageLab: React.FC<LanguageLabProps> = ({
       {/* Analysis Results View */}
       {result && (
         <div data-testid="grammar-analysis-results" className="space-y-6 animate-in fade-in duration-300">
-          {/* Side by Side Comparison Card */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Original Input */}
-            <div className="bg-white dark:bg-[#161D27] border border-slate-200 dark:border-[#293342] rounded-xl p-6 space-y-3 shadow-xs dark:shadow-none">
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-[#9BA6B2] font-medium">
-                <span className="flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  {t('lab.originalSentence', nativeLanguage)}
-                </span>
-                <span className="text-[11px] text-slate-500 dark:text-[#9BA6B2]">{t('lab.asWritten', nativeLanguage)}</span>
-              </div>
-              <p className="text-base text-slate-800 dark:text-[#F0F2F5] leading-relaxed font-medium">
-                {result.originalText}
-              </p>
-            </div>
-
+          {/* Suggested Better Version Card */}
+          <div className="grid grid-cols-1 gap-4">
             {/* AI Suggested Better Version */}
             <div className="bg-white dark:bg-[#161D27] border border-emerald-500/35 rounded-xl p-6 space-y-3 shadow-xs dark:shadow-none">
               <div className="flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-400 font-medium gap-2">
@@ -482,20 +468,6 @@ export const LanguageLab: React.FC<LanguageLabProps> = ({
             </div>
           )}
 
-          {/* Cultural & Linguistic Nuance Tip */}
-          {result.nativeNuanceTip && (
-            <div className="bg-white dark:bg-[#161D27] border border-amber-500/30 rounded-xl p-5 flex items-start gap-3 shadow-xs dark:shadow-none">
-              <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-semibold text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1">
-                  {t('lab.culturalInsight', nativeLanguage)}
-                </h4>
-                <p className="text-xs sm:text-sm text-slate-800 dark:text-[#F0F2F5] leading-relaxed">
-                  {result.nativeNuanceTip}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       )}
       </div>

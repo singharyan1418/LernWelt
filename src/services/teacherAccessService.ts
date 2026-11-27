@@ -7,17 +7,13 @@ import {
 export const TEACHER_ACCESS_PRICE_INR = 999;
 export const TEACHER_ACCESS_CURRENCY = 'INR' as const;
 export const TEACHER_ACCESS_STORAGE_PREFIX = 'lernwelt_teacher_access_v2';
+export const PAYMENT_QR_IMAGE_URL = '/assets/aistudio/IMG-20261112-WA0008_8f6d6d86.jpg';
 
 export interface TeacherPaymentInput {
   paymentMethod: TeacherPaymentMethod;
   amountInr?: number;
-  upiId?: string;
-  cardHolder?: string;
-  cardNumber?: string;
-  cardExpiry?: string;
-  cardCvv?: string;
-  bankName?: string;
-  accountHolder?: string;
+  qrConfirmed?: boolean;
+  transactionReference?: string;
 }
 
 export interface PaymentValidationResult {
@@ -271,11 +267,11 @@ export function upsertTeacherAccessPass(
 }
 
 /**
- * Strictly validates ₹999 teacher pass payment details for UPI, Card, or Net Banking.
+ * Strictly validates ₹999 QR-only teacher pass payment confirmation.
  */
 export function validateTeacherPaymentInput(
   input: TeacherPaymentInput,
-  nowMs: number = Date.now()
+  _nowMs: number = Date.now()
 ): PaymentValidationResult {
   if (input.amountInr !== undefined && Number(input.amountInr) !== TEACHER_ACCESS_PRICE_INR) {
     return {
@@ -284,76 +280,28 @@ export function validateTeacherPaymentInput(
     };
   }
 
-  const method = input.paymentMethod;
-  if (method !== 'upi' && method !== 'card' && method !== 'netbanking') {
-    return { valid: false, error: 'Please choose UPI, Card, or Net Banking.' };
+  if (input.paymentMethod !== 'qr') {
+    return { valid: false, error: 'Only QR code payment is supported.' };
   }
 
-  if (method === 'upi') {
-    const upi = String(input.upiId || '').trim();
-    if (!/^[a-zA-Z0-9._-]{2,}@[a-zA-Z0-9.-]{2,}$/.test(upi)) {
-      return {
-        valid: false,
-        error: 'Enter a valid UPI ID (for example, name@okaxis or user@upi).'
-      };
-    }
+  if (!input.qrConfirmed) {
     return {
-      valid: true,
-      paymentSummary: `UPI · ${upi}`
+      valid: false,
+      error: 'Please scan the QR code and confirm your ₹999 payment to continue.'
     };
   }
 
-  if (method === 'card') {
-    const holder = String(input.cardHolder || '').trim();
-    if (holder.length < 2) {
-      return { valid: false, error: 'Enter the cardholder name (at least 2 characters).' };
-    }
-
-    const digits = String(input.cardNumber || '').replace(/[\s-]+/g, '');
-    if (!/^\d{13,19}$/.test(digits) || /^(\d)\1+$/.test(digits)) {
-      return { valid: false, error: 'Enter a valid 13–19 digit debit or credit card number.' };
-    }
-
-    const expiry = String(input.cardExpiry || '').trim();
-    const expMatch = expiry.match(/^(\d{2})\/(\d{2})$/);
-    if (!expMatch) {
-      return { valid: false, error: 'Enter card expiry in MM/YY format.' };
-    }
-    const expMonth = Number(expMatch[1]);
-    const expYear = 2000 + Number(expMatch[2]);
-    if (expMonth < 1 || expMonth > 12) {
-      return { valid: false, error: 'Card expiry month must be between 01 and 12.' };
-    }
-    const nowDate = new Date(nowMs);
-    const currentYear = nowDate.getUTCFullYear();
-    const currentMonth = nowDate.getUTCMonth() + 1;
-    if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
-      return { valid: false, error: 'This card has expired. Use an active card.' };
-    }
-
-    const cvv = String(input.cardCvv || '').trim();
-    if (!/^\d{3,4}$/.test(cvv)) {
-      return { valid: false, error: 'Enter a valid 3- or 4-digit CVV.' };
-    }
-
+  const ref = String(input.transactionReference || '').trim();
+  if (ref && !/^[a-zA-Z0-9._-]{4,40}$/.test(ref)) {
     return {
-      valid: true,
-      paymentSummary: `Card · •••• ${digits.slice(-4)}`
+      valid: false,
+      error: 'Enter a valid UPI transaction reference (4–40 alphanumeric characters) or leave it blank.'
     };
-  }
-
-  const bankName = String(input.bankName || '').trim();
-  const accountHolder = String(input.accountHolder || '').trim();
-  if (bankName.length < 2) {
-    return { valid: false, error: 'Select your bank for Net Banking.' };
-  }
-  if (accountHolder.length < 2) {
-    return { valid: false, error: 'Enter the account holder name (at least 2 characters).' };
   }
 
   return {
     valid: true,
-    paymentSummary: `Net Banking · ${bankName}`
+    paymentSummary: ref ? `QR Payment · Ref ${ref}` : `QR Payment · ₹${TEACHER_ACCESS_PRICE_INR}`
   };
 }
 

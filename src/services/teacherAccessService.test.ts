@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  PAYMENT_QR_IMAGE_URL,
   TEACHER_ACCESS_PRICE_INR,
   addOneMonthFromDate,
   createTeacherAccessPass,
@@ -14,9 +15,9 @@ import {
   upsertTeacherAccessPass,
   validateTeacherPaymentInput
 } from './teacherAccessService';
-import { TeacherAccessPass } from '../types';
+import { TeacherAccessPass, TeacherPaymentMethod } from '../types';
 
-describe('teacherAccessService (per-teacher ₹999 monthly gate)', () => {
+describe('teacherAccessService (per-teacher ₹999 QR-only monthly gate)', () => {
   it('blocks direct access when pass is null or invalid', () => {
     assert.equal(isTeacherAccessActive(null), false);
     assert.equal(isTeacherAccessActive(undefined), false);
@@ -44,15 +45,15 @@ describe('teacherAccessService (per-teacher ₹999 monthly gate)', () => {
     assert.equal(addOneMonthFromDate(paidDec15), Date.UTC(2027, 0, 15, 8, 0, 0)); // Jan 15, 2027
   });
 
-  it('activates for 1 month after ₹999 payment for that specific teacher and expires automatically after 1 month', () => {
+  it('activates for 1 month after ₹999 QR payment for that specific teacher and expires automatically after 1 month', () => {
     const paidAt = Date.UTC(2026, 4, 5, 10, 0, 0); // May 5, 2026
     const pass = createTeacherAccessPass({
       userId: 'usr_123',
       teacherId: 'teacher_de_hannah',
       teacherName: 'Dr. Hannah Lindner',
       userName: 'Aryan',
-      paymentMethod: 'upi',
-      paymentSummary: 'UPI · aryan@upi',
+      paymentMethod: 'qr',
+      paymentSummary: 'QR Payment · ₹999',
       paidAt
     });
 
@@ -83,8 +84,8 @@ describe('teacherAccessService (per-teacher ₹999 monthly gate)', () => {
       userId: 'usr_123',
       teacherId: 'teacher_de_hannah',
       teacherName: 'Dr. Hannah Lindner',
-      paymentMethod: 'upi',
-      paymentSummary: 'UPI · aryan@okaxis',
+      paymentMethod: 'qr',
+      paymentSummary: 'QR Payment · ₹999',
       paidAt: paidHannah
     });
 
@@ -102,8 +103,8 @@ describe('teacherAccessService (per-teacher ₹999 monthly gate)', () => {
       userId: 'usr_123',
       teacherId: 'teacher_es_mateo',
       teacherName: 'Prof. Mateo Valdés',
-      paymentMethod: 'upi',
-      paymentSummary: 'UPI · aryan@okaxis',
+      paymentMethod: 'qr',
+      paymentSummary: 'QR Payment · ₹999',
       paidAt: paidMateo
     });
     passes = upsertTeacherAccessPass(passes, mateoPass);
@@ -119,8 +120,8 @@ describe('teacherAccessService (per-teacher ₹999 monthly gate)', () => {
     const pass = createTeacherAccessPass({
       userId: 'usr_123',
       teacherId: 'teacher_de_hannah',
-      paymentMethod: 'upi',
-      paymentSummary: 'UPI · aryan@upi',
+      paymentMethod: 'qr',
+      paymentSummary: 'QR Payment · ₹999',
       paidAt
     });
     const tamperedPrice = { ...pass, amountInr: 1 };
@@ -131,68 +132,58 @@ describe('teacherAccessService (per-teacher ₹999 monthly gate)', () => {
     assert.equal(normalizeTeacherAccessPassList([legacyGlobalPass, pass]).length, 1);
   });
 
-  it('validates UPI, Card, and Net Banking payment inputs strictly', () => {
+  it('enforces QR-only payment validation and points to the user QR image', () => {
     const now = Date.UTC(2026, 4, 5, 10, 0, 0);
+    assert.equal(PAYMENT_QR_IMAGE_URL, '/assets/aistudio/IMG-20261112-WA0008_8f6d6d86.jpg');
 
     // Reject wrong amount
     assert.equal(
-      validateTeacherPaymentInput({ paymentMethod: 'upi', amountInr: 500, upiId: 'user@upi' }, now).valid,
+      validateTeacherPaymentInput({ paymentMethod: 'qr', amountInr: 500, qrConfirmed: true }, now).valid,
       false
     );
 
-    // UPI validation
-    assert.equal(validateTeacherPaymentInput({ paymentMethod: 'upi', upiId: 'invalid' }, now).valid, false);
-    assert.equal(validateTeacherPaymentInput({ paymentMethod: 'upi', upiId: 'aryan@okaxis' }, now).valid, true);
-
-    // Card validation
+    // Reject non-QR methods
     assert.equal(
-      validateTeacherPaymentInput({
-        paymentMethod: 'card',
-        cardHolder: 'Aryan',
-        cardNumber: '1234',
-        cardExpiry: '12/28',
-        cardCvv: '123'
-      }, now).valid,
+      validateTeacherPaymentInput(
+        { paymentMethod: 'card' as unknown as TeacherPaymentMethod, qrConfirmed: true },
+        now
+      ).valid,
       false
     );
     assert.equal(
-      validateTeacherPaymentInput({
-        paymentMethod: 'card',
-        cardHolder: 'Aryan',
-        cardNumber: '4242 4242 4242 4242',
-        cardExpiry: '01/25', // expired vs May 2026
-        cardCvv: '123'
-      }, now).valid,
+      validateTeacherPaymentInput(
+        { paymentMethod: 'netbanking' as unknown as TeacherPaymentMethod, qrConfirmed: true },
+        now
+      ).valid,
       false
-    );
-    assert.equal(
-      validateTeacherPaymentInput({
-        paymentMethod: 'card',
-        cardHolder: 'Aryan',
-        cardNumber: '4242 4242 4242 4242',
-        cardExpiry: '12/28',
-        cardCvv: '456'
-      }, now).valid,
-      true
     );
 
-    // Net banking validation
+    // Reject unconfirmed QR payment
     assert.equal(
-      validateTeacherPaymentInput({
-        paymentMethod: 'netbanking',
-        bankName: '',
-        accountHolder: 'Aryan'
-      }, now).valid,
+      validateTeacherPaymentInput({ paymentMethod: 'qr', qrConfirmed: false }, now).valid,
       false
     );
+
+    // Reject malformed short UTR reference when provided
     assert.equal(
-      validateTeacherPaymentInput({
-        paymentMethod: 'netbanking',
-        bankName: 'HDFC Bank',
-        accountHolder: 'Aryan Sharma'
-      }, now).valid,
-      true
+      validateTeacherPaymentInput(
+        { paymentMethod: 'qr', qrConfirmed: true, transactionReference: '12' },
+        now
+      ).valid,
+      false
     );
+
+    // Valid QR payment with and without optional reference
+    const noRef = validateTeacherPaymentInput({ paymentMethod: 'qr', qrConfirmed: true }, now);
+    assert.equal(noRef.valid, true);
+    assert.equal(noRef.paymentSummary, 'QR Payment · ₹999');
+
+    const withRef = validateTeacherPaymentInput(
+      { paymentMethod: 'qr', qrConfirmed: true, transactionReference: '432198765432' },
+      now
+    );
+    assert.equal(withRef.valid, true);
+    assert.equal(withRef.paymentSummary, 'QR Payment · Ref 432198765432');
   });
 
   it('identifies teacher classroom room IDs and extracts owning teacherId safely', () => {

@@ -2228,13 +2228,8 @@ app.post('/api/teachers/access/pay', (req: Request, res: Response) => {
     userEmail,
     paymentMethod,
     amountInr,
-    upiId,
-    cardHolder,
-    cardNumber,
-    cardExpiry,
-    cardCvv,
-    bankName,
-    accountHolder
+    qrConfirmed,
+    transactionReference
   } = req.body || {};
 
   const cleanUserId = String(userId || '').trim();
@@ -2247,17 +2242,13 @@ app.post('/api/teachers/access/pay', (req: Request, res: Response) => {
   }
 
   const nowMs = Date.now();
+  const resolvedMethod = paymentMethod || 'qr';
   const validation = validateTeacherPaymentInput(
     {
-      paymentMethod,
+      paymentMethod: resolvedMethod,
       amountInr: amountInr !== undefined ? Number(amountInr) : TEACHER_ACCESS_PRICE_INR,
-      upiId,
-      cardHolder,
-      cardNumber,
-      cardExpiry,
-      cardCvv,
-      bankName,
-      accountHolder
+      qrConfirmed: Boolean(qrConfirmed),
+      transactionReference
     },
     nowMs
   );
@@ -2272,7 +2263,7 @@ app.post('/api/teachers/access/pay', (req: Request, res: Response) => {
     teacherName: teacherName ? String(teacherName) : undefined,
     userName: userName ? String(userName) : undefined,
     userEmail: userEmail ? String(userEmail) : undefined,
-    paymentMethod,
+    paymentMethod: 'qr',
     paymentSummary: validation.paymentSummary,
     paidAt: nowMs
   });
